@@ -47,11 +47,13 @@ def build_asgi_app(
     api_client=None,
     model: str | None = None,
     permission_mode: str | None = None,
+    build_engine=None,
 ) -> Starlette:
     """Build the Starlette ASGI app (used by tests and by `oh a2a-serve`)."""
     card = build_agent_card(a2a_settings)
     sessions = SessionManager(
-        cwd=cwd, api_client=api_client, model=model, permission_mode=permission_mode
+        cwd=cwd, api_client=api_client, model=model, permission_mode=permission_mode,
+        build_engine=build_engine,
     )
     push_store = InMemoryPushNotificationConfigStore()
     push_client = httpx.AsyncClient()
@@ -87,11 +89,13 @@ def run_a2a_server(
     cwd: str,
     model: str | None = None,
     permission_mode: str | None = None,
+    build_engine=None,
 ) -> None:
     """Run the server with uvicorn (blocking)."""
     import uvicorn
 
     app = build_asgi_app(
-        a2a_settings=a2a_settings, cwd=cwd, model=model, permission_mode=permission_mode
+        a2a_settings=a2a_settings, cwd=cwd, model=model, permission_mode=permission_mode,
+        build_engine=build_engine,
     )
     uvicorn.run(app, host=a2a_settings.host, port=a2a_settings.port)
