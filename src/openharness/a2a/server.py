@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from a2a.server.events import InMemoryQueueManager
-from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.request_handlers import LegacyRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import (
     BasePushNotificationSender,
@@ -60,7 +60,7 @@ def build_asgi_app(
     push_sender = BasePushNotificationSender(
         httpx_client=push_client, config_store=push_store
     )
-    handler = DefaultRequestHandler(
+    handler = LegacyRequestHandler(
         agent_executor=HarnessAgentExecutor(sessions),
         task_store=InMemoryTaskStore(),
         agent_card=card,
@@ -68,7 +68,7 @@ def build_asgi_app(
         push_config_store=push_store,
         push_sender=push_sender,
     )
-    routes = create_agent_card_routes(card) + create_jsonrpc_routes(handler, DEFAULT_RPC_URL)
+    routes = create_agent_card_routes(card) + create_jsonrpc_routes(handler, DEFAULT_RPC_URL, enable_v0_3_compat=True)
 
     @asynccontextmanager
     async def _lifespan(app):
