@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import httpx
 from a2a.server.events import InMemoryQueueManager
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -52,8 +54,9 @@ def build_asgi_app(
         cwd=cwd, api_client=api_client, model=model, permission_mode=permission_mode
     )
     push_store = InMemoryPushNotificationConfigStore()
+    push_client = httpx.AsyncClient()
     push_sender = BasePushNotificationSender(
-        httpx_client=httpx.AsyncClient(), config_store=push_store
+        httpx_client=push_client, config_store=push_store
     )
     handler = DefaultRequestHandler(
         agent_executor=HarnessAgentExecutor(sessions),
@@ -64,7 +67,15 @@ def build_asgi_app(
         push_sender=push_sender,
     )
     routes = create_agent_card_routes(card) + create_jsonrpc_routes(handler, DEFAULT_RPC_URL)
-    app = Starlette(routes=routes)
+
+    @asynccontextmanager
+    async def _lifespan(app):
+        try:
+            yield
+        finally:
+            await push_client.aclose()
+
+    app = Starlette(routes=routes, lifespan=_lifespan)
     if a2a_settings.auth_token:
         app.add_middleware(_BearerAuthMiddleware, token=a2a_settings.auth_token)
     return app

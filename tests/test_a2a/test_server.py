@@ -35,3 +35,33 @@ async def test_auth_required_when_token_set(tmp_path, fake_client_factory):
             json={"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {}},
         )
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_correct_token_passes(tmp_path, fake_client_factory):
+    app = build_asgi_app(
+        a2a_settings=A2AServerSettings(auth_token="secret"),
+        cwd=str(tmp_path),
+        api_client=fake_client_factory([["hi"]]),
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            DEFAULT_RPC_URL,
+            headers={"Authorization": "Bearer secret"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {}},
+        )
+    assert resp.status_code != 401
+
+
+@pytest.mark.asyncio
+async def test_well_known_open_when_auth_enabled(tmp_path, fake_client_factory):
+    app = build_asgi_app(
+        a2a_settings=A2AServerSettings(auth_token="secret"),
+        cwd=str(tmp_path),
+        api_client=fake_client_factory([["hi"]]),
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(AGENT_CARD_WELL_KNOWN_PATH)
+    assert resp.status_code == 200

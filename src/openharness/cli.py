@@ -2553,8 +2553,8 @@ def main(
 
 @app.command("a2a-serve")
 def a2a_serve(
-    host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
-    port: int = typer.Option(9100, "--port", help="Bind port"),
+    host: Optional[str] = typer.Option(None, "--host", help="Bind host"),
+    port: Optional[int] = typer.Option(None, "--port", help="Bind port"),
     cwd: Optional[str] = typer.Option(None, "--cwd", help="Working directory for the agent"),
     model: Optional[str] = typer.Option(None, "--model", help="Model override"),
     public_url: Optional[str] = typer.Option(None, "--public-url", help="Externally advertised URL"),
@@ -2565,8 +2565,8 @@ def a2a_serve(
 
     base = A2AServerSettings.from_env()
     settings = base.model_copy(update={
-        "host": host,
-        "port": port,
+        **({"host": host} if host is not None else {}),
+        **({"port": port} if port is not None else {}),
         **({"public_url_override": public_url} if public_url else {}),
     })
     run_a2a_server(
