@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import atexit
+import shutil
 import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -31,6 +33,7 @@ def make_build_engine(
     """
     plugin_roots: list[str] = [_skills_plugin_root()]
     mcp_dir = Path(tempfile.mkdtemp(prefix="domo-mcp-"))
+    atexit.register(shutil.rmtree, mcp_dir, ignore_errors=True)
     mcp_root = write_runtime_mcp_plugin(config, mcp_dir)
     if mcp_root is not None:
         plugin_roots.append(str(mcp_root))
@@ -45,6 +48,9 @@ def make_build_engine(
             ask_user_prompt=None,
             enforce_max_turns=True,
         )
+        # bundle.session_id is intentionally unused here: the engine reads
+        # tool_metadata["session_id"] for session memory, and the A2A path does
+        # not use handle_line snapshot persistence.
         engine = bundle.engine
         # Per-conversation memory: session memory is keyed by session_id.
         engine.tool_metadata["session_id"] = context_id
