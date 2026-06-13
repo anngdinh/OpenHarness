@@ -26,6 +26,13 @@ def test_permission_blocks_kubectl_mutations_allows_reads():
     assert not checker.evaluate("bash", is_read_only=False, command="sudo reboot").allowed
     assert checker.evaluate("bash", is_read_only=False, command="kubectl get pods").allowed
     assert checker.evaluate("bash", is_read_only=False, command="kubectl describe pod web").allowed
+    # compound command containing a mutation is denied even when it starts with a read
+    assert not checker.evaluate("bash", is_read_only=False, command="kubectl get pods && kubectl delete pod x").allowed
+    # newly-covered dangerous verbs
+    assert not checker.evaluate("bash", is_read_only=False, command="kubectl port-forward svc/x 8080:80").allowed
+    assert not checker.evaluate("bash", is_read_only=False, command="kubectl exec -it pod -- sh").allowed
+    # read still allowed (no false positive)
+    assert checker.evaluate("bash", is_read_only=False, command="kubectl get configmaps").allowed
 
 
 def test_permission_mode_is_full_auto():
