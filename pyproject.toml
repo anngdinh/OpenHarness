@@ -53,9 +53,10 @@ openharness = "openharness.cli:app"
 oh = "openharness.cli:app"
 openh = "openharness.cli:app"
 ohmo = "ohmo.cli:app"
+domo = "domo.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/openharness", "ohmo"]
+packages = ["src/openharness", "ohmo", "domo"]
 
 [tool.hatch.build]
 exclude = [
@@ -74,6 +75,7 @@ exclude = [
 "frontend/terminal/package.json" = "openharness/_frontend/package.json"
 "frontend/terminal/tsconfig.json" = "openharness/_frontend/tsconfig.json"
 "frontend/terminal/src" = "openharness/_frontend/src"
+"domo/plugin" = "domo/plugin"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
