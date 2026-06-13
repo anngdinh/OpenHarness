@@ -116,6 +116,32 @@ app = Starlette(routes=create_agent_card_routes(card) + create_jsonrpc_routes(ha
 - **Task 9 (server.py):** assemble with `create_agent_card_routes(card) + create_jsonrpc_routes(handler, DEFAULT_RPC_URL)` into `Starlette(routes=...)`; add bearer middleware. No `A2AStarletteApplication`.
 - **Tasks 2,4,5,6 (config/events/fake-client/sessions):** unaffected — our code only.
 
+## ⚠️ CRITICAL: handler choice — use `LegacyRequestHandler` for the classic protocol
+
+In a2a-sdk 1.1.0, `DefaultRequestHandler` **is** `DefaultRequestHandlerV2` — the strict
+"protocol 1.0" handler: it only registers **gRPC-style** JSON-RPC method names
+(`SendMessage`, `GetTask`, `CancelTask`…), rejects requests as `version '0.3' not
+supported, expected '1.0'`, and requires the executor to **enqueue a Task before any
+TaskStatusUpdateEvent**. Our executor follows the **classic v0.3** pattern
+(`submit → start_work → update_status → add_artifact → complete`).
+
+**Verified working setup for the classic A2A wire protocol (`message/send` etc.):**
+```python
+from a2a.server.request_handlers import LegacyRequestHandler   # NOT DefaultRequestHandler
+handler = LegacyRequestHandler(agent_executor=..., task_store=..., agent_card=card,
+                               queue_manager=..., push_config_store=..., push_sender=...)
+routes = create_agent_card_routes(card) + create_jsonrpc_routes(
+    handler, DEFAULT_RPC_URL, enable_v0_3_compat=True)   # compat=True → classic method names
+```
+A `message/send` JSON-RPC call (`params={"message":{"messageId","role":"user",
+"parts":[{"kind":"text","text":...}]}}`) then returns a completed task whose
+`result.artifacts[0].parts[0].text` is the streamed answer. (The gRPC-style `SendMessage`
+name remains 0.3-mismatched — irrelevant for a JSON-RPC server.)
+
+**Test-gap lesson:** unit-testing the executor with a fake EventQueue PASSES but bypasses
+the handler's version + event-ordering contract. Always add a real e2e test that POSTs
+`message/send` through `build_asgi_app` (see `tests/test_a2a/test_server.py::test_message_send_end_to_end`).
+
 ## input-required routing — STILL TO CONFIRM in Task 11
 
 Not yet verified: whether a follow-up `message/send` with the same `taskId` reaches `execute()` while the first run awaits, or invokes `execute()` again. `InMemoryQueueManager` + `updater.requires_input()` exist (the mechanism is present). Confirm behavior with a focused test at the start of Task 11 before wiring the suspend/resume.
