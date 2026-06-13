@@ -75,7 +75,6 @@ exclude = [
 "frontend/terminal/package.json" = "openharness/_frontend/package.json"
 "frontend/terminal/tsconfig.json" = "openharness/_frontend/tsconfig.json"
 "frontend/terminal/src" = "openharness/_frontend/src"
-"domo/plugin" = "domo/plugin"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
