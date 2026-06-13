@@ -2549,3 +2549,29 @@ def main(
             effort=effort,
         )
     )
+
+
+@app.command("a2a-serve")
+def a2a_serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
+    port: int = typer.Option(9100, "--port", help="Bind port"),
+    cwd: Optional[str] = typer.Option(None, "--cwd", help="Working directory for the agent"),
+    model: Optional[str] = typer.Option(None, "--model", help="Model override"),
+    public_url: Optional[str] = typer.Option(None, "--public-url", help="Externally advertised URL"),
+    permission_mode: Optional[str] = typer.Option(None, "--permission-mode", help="Permission mode for server sessions"),
+) -> None:
+    """Run an A2A server exposing this agent (auth via OPENHARNESS_A2A_AUTH_TOKEN)."""
+    from openharness.a2a import A2AServerSettings, run_a2a_server
+
+    base = A2AServerSettings.from_env()
+    settings = base.model_copy(update={
+        "host": host,
+        "port": port,
+        **({"public_url_override": public_url} if public_url else {}),
+    })
+    run_a2a_server(
+        a2a_settings=settings,
+        cwd=cwd or str(Path.cwd()),
+        model=model,
+        permission_mode=permission_mode,
+    )
