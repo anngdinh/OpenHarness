@@ -60,9 +60,11 @@ create_agent_card_routes(agent_card, card_modifier=None, card_url='/.well-known/
 
 RequestContext: .get_user_input(), .task_id, .context_id, .current_task, .message, .configuration, .metadata, .call_context
 TaskUpdater(event_queue, task_id, context_id):
-  .submit(), .start_work(), .update_status(state, message=None, final=False),
+  .submit(), .start_work(), .update_status(state, message=None, timestamp=None, metadata=None),
+  # ⚠️ update_status has NO `final` kwarg in 1.1.0 (the 0.2.x plan was wrong).
+  # For a TERMINAL status use the dedicated finalizers, which call update_status internally:
   .add_artifact(parts, artifact_id=None, name=None, metadata=None, append=None, last_chunk=None),
-  .complete(), .failed(message=None), .cancel(), .reject(),
+  .complete(message=None), .failed(message=None), .cancel(message=None), .reject(),
   .requires_input(message=None),   # ← INPUT-REQUIRED
   .requires_auth(...), .new_agent_message(parts, metadata=None) -> Message
 AgentExecutor (abstract): async execute(context, event_queue); async cancel(context, event_queue)

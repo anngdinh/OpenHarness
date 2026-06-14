@@ -47,18 +47,14 @@ class HarnessAgentExecutor(AgentExecutor):
                         message=updater.new_agent_message([Part(text=intent.text)]),
                     )
                 elif isinstance(intent, Failure):
-                    await updater.update_status(
-                        TaskState.TASK_STATE_FAILED,
+                    await updater.failed(
                         message=updater.new_agent_message([Part(text=intent.text)]),
-                        final=True,
                     )
                     return
         except Exception as exc:
             log.exception("a2a execute failed task=%s", context.task_id)
-            await updater.update_status(
-                TaskState.TASK_STATE_FAILED,
+            await updater.failed(
                 message=updater.new_agent_message([Part(text=_sanitize(exc))]),
-                final=True,
             )
             return
 
@@ -68,7 +64,7 @@ class HarnessAgentExecutor(AgentExecutor):
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         # Real cancellation of an in-flight run is added in Task 11.
         updater = TaskUpdater(event_queue, context.task_id, context.context_id)
-        await updater.update_status(TaskState.TASK_STATE_CANCELED, final=True)
+        await updater.cancel()
 
 
 def _sanitize(exc: Exception) -> str:
