@@ -40,6 +40,12 @@ class FakeClient:
         self.searched = (namespace, request.query)
         return SimpleNamespace(list_data=[SimpleNamespace(memory="user likes iced coffee", score=0.9)])
 
+    async def list_memory_records_async(self, *, id, namespace):  # noqa: A002
+        # 50 records to exercise the max_facts/max_chars cap.
+        return SimpleNamespace(
+            list_data=[SimpleNamespace(memory=f"fact number {i}") for i in range(50)]
+        )
+
     async def generate_memory_records_from_session_async(self, *, id, actorId, sessionId, longTermMemoryStrategyId):  # noqa: A002,N803
         self.generated = (id, actorId, sessionId, longTermMemoryStrategyId)
 
@@ -78,6 +84,14 @@ async def test_search_facts_text(fake):
 async def test_search_facts_empty_query_is_noop(fake):
     assert await am.search_facts_text(CFG, "alice", "   ") == ""
     assert fake.searched is None
+
+
+@pytest.mark.asyncio
+async def test_all_facts_text_is_bounded(fake):
+    text = await am.all_facts_text(CFG, "alice", max_facts=20, max_chars=2000)
+    lines = text.splitlines()
+    assert len(lines) <= 20  # capped by max_facts
+    assert len(text) <= 2000  # capped by max_chars
 
 
 @pytest.mark.asyncio

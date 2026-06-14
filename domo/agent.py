@@ -34,10 +34,13 @@ def _is_allowed_tool(name: str) -> bool:
 
 
 async def _agentbase_recall(context_id: str) -> str:
-    """When the AgentBase memory backend is active, fetch prior context for this
-    user (durable facts + recent conversation) so it can be injected into the
-    system prompt — the channel that actually reaches the model every turn (the
-    session-memory file is only injected at compaction). Best-effort.
+    """When the AgentBase backend is active, inject the user's distilled durable
+    facts into the system prompt — the channel that reaches the model every turn.
+
+    Only bounded facts go here (not raw recent events): facts are compact and are
+    the real cross-session value, while recent-conversation continuity already
+    rides the compaction session-memory channel and lives in the working messages.
+    Best-effort — failures leave the persona unchanged.
     """
     from openharness.config.settings import load_settings
 
@@ -49,22 +52,14 @@ async def _agentbase_recall(context_id: str) -> str:
     try:
         from openharness.services import agentbase_memory as am
 
-        cfg = memory.agentbase
-        facts = await am.all_facts_text(cfg, context_id)
-        convo = await am.recent_conversation_text(cfg, context_id, context_id, limit=20)
+        facts = await am.all_facts_text(memory.agentbase, context_id)
     except Exception:
         return ""
-    sections = []
-    if facts:
-        sections.append("Known facts about this user:\n" + facts)
-    if convo:
-        sections.append("Recent conversation with this user:\n" + convo)
-    if not sections:
+    if not facts:
         return ""
     return (
-        "\n\n# Memory — prior context for this user\n"
-        "Use it to personalize and maintain continuity; do not repeat it verbatim.\n\n"
-        + "\n\n".join(sections)
+        "\n\n# Memory — known facts about this user\n"
+        "Use these to personalize; do not repeat them verbatim.\n\n" + facts
     )
 
 

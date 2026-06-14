@@ -103,8 +103,15 @@ async def search_facts_text(
     return "\n".join(f"- {fact}" for fact in facts if fact)
 
 
-async def all_facts_text(config: "AgentBaseMemoryConfig", actor: str) -> str:
-    """Browse all durable memory records for an actor; one fact per line."""
+async def all_facts_text(
+    config: "AgentBaseMemoryConfig", actor: str, *, max_facts: int = 20, max_chars: int = 2000
+) -> str:
+    """Durable memory records for an actor, one fact per line.
+
+    Bounded (``max_facts`` lines, ``max_chars`` total) — this is injected into the
+    system prompt every turn and is not subject to compaction, so it must not grow
+    without limit as a user accumulates records.
+    """
     client = _client(config)
     try:
         result = await client.list_memory_records_async(
@@ -114,7 +121,11 @@ async def all_facts_text(config: "AgentBaseMemoryConfig", actor: str) -> str:
         await client.close()
     records = list(getattr(result, "list_data", result) or [])
     facts = [(getattr(r, "memory", None) or "").strip() for r in records]
-    return "\n".join(f"- {fact}" for fact in facts if fact)
+    facts = [fact for fact in facts if fact][:max_facts]
+    text = "\n".join(f"- {fact}" for fact in facts)
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit("\n", 1)[0] + "\n- …(truncated)"
+    return text
 
 
 async def generate_facts(config: "AgentBaseMemoryConfig", actor: str, session: str) -> None:
