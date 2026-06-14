@@ -10,7 +10,7 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Part, TaskState
 
-from openharness.a2a.events import ArtifactChunk, Failure, StatusUpdate, map_stream_event
+from openharness.a2a.events import ArtifactChunk, Failure, StatusUpdate, Usage, map_stream_event
 from openharness.a2a.sessions import SessionManager
 
 log = logging.getLogger(__name__)
@@ -39,6 +39,8 @@ class HarnessAgentExecutor(AgentExecutor):
         artifact_id = uuid.uuid4().hex
         pending: str | None = None
         started = False  # the artifact has been created (first chunk: append=False)
+        input_tokens = 0
+        output_tokens = 0
         try:
             async for event in session.engine.submit_message(prompt):
                 intent = map_stream_event(event)
@@ -60,6 +62,9 @@ class HarnessAgentExecutor(AgentExecutor):
                             [Part(text=intent.text)], metadata=intent.metadata or None
                         ),
                     )
+                elif isinstance(intent, Usage):
+                    input_tokens += intent.input_tokens
+                    output_tokens += intent.output_tokens
                 elif isinstance(intent, Failure):
                     await updater.failed(
                         message=updater.new_agent_message([Part(text=intent.text)]),
@@ -72,12 +77,25 @@ class HarnessAgentExecutor(AgentExecutor):
             )
             return
 
+        # A2A has no first-class usage field; surface the total via the artifact's
+        # metadata (A2A's sanctioned extension carrier). Omitted when unavailable.
+        metadata = None
+        if input_tokens or output_tokens:
+            metadata = {
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens,
+                }
+            }
+
         # Flush the final answer chunk, marking the artifact stream complete.
         if pending is not None:
             await updater.add_artifact(
                 [Part(text=pending)],
                 artifact_id=artifact_id,
                 name=_ARTIFACT_NAME,
+                metadata=metadata,
                 append=started,
                 last_chunk=True,
             )
@@ -88,6 +106,7 @@ class HarnessAgentExecutor(AgentExecutor):
                 [Part(text="")],
                 artifact_id=artifact_id,
                 name=_ARTIFACT_NAME,
+                metadata=metadata,
                 last_chunk=True,
             )
         await updater.complete()

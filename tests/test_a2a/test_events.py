@@ -3,6 +3,7 @@ from openharness.a2a.events import (
     ArtifactChunk,
     StatusUpdate,
     Failure,
+    Usage,
 )
 from openharness.engine.stream_events import (
     AssistantTextDelta,
@@ -70,7 +71,10 @@ def test_compact_progress_event_becomes_status():
     assert isinstance(intent, StatusUpdate)
 
 
-def test_assistant_turn_complete_returns_none():
+def test_assistant_turn_complete_becomes_usage():
     message = ConversationMessage(role="assistant", content=[TextBlock(text="x")])
-    usage = UsageSnapshot()
-    assert map_stream_event(AssistantTurnComplete(message=message, usage=usage)) is None
+    usage = UsageSnapshot(input_tokens=11, output_tokens=7)
+    intent = map_stream_event(AssistantTurnComplete(message=message, usage=usage))
+    assert isinstance(intent, Usage)
+    assert intent.input_tokens == 11
+    assert intent.output_tokens == 7

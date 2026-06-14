@@ -44,7 +44,20 @@ class Failure:
     text: str
 
 
-A2AIntent = ArtifactChunk | StatusUpdate | Failure
+@dataclass(frozen=True)
+class Usage:
+    """Token usage for one assistant turn.
+
+    A2A has no first-class usage field, so the executor accumulates these across
+    turns and surfaces the total via the answer artifact's ``metadata`` (A2A's
+    sanctioned extension carrier).
+    """
+
+    input_tokens: int
+    output_tokens: int
+
+
+A2AIntent = ArtifactChunk | StatusUpdate | Failure | Usage
 
 
 def map_stream_event(event: StreamEvent) -> A2AIntent | None:
@@ -75,5 +88,8 @@ def map_stream_event(event: StreamEvent) -> A2AIntent | None:
     if isinstance(event, ErrorEvent):
         return Failure(text=event.message)
     if isinstance(event, AssistantTurnComplete):
-        return None
+        return Usage(
+            input_tokens=event.usage.input_tokens,
+            output_tokens=event.usage.output_tokens,
+        )
     return None

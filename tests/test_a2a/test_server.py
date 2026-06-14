@@ -94,6 +94,57 @@ class _RaisingClient:
         yield  # pragma: no cover - makes this an async generator
 
 
+class _UsageClient:
+    """Yields one text chunk then a complete event carrying token usage."""
+
+    async def stream_message(self, request):  # noqa: ANN001
+        from openharness.api.client import ApiMessageCompleteEvent, ApiTextDeltaEvent
+        from openharness.api.usage import UsageSnapshot
+        from openharness.engine.messages import ConversationMessage, TextBlock
+
+        yield ApiTextDeltaEvent(text="Answer")
+        message = ConversationMessage(role="assistant", content=[TextBlock(text="Answer")])
+        yield ApiMessageCompleteEvent(
+            message=message, usage=UsageSnapshot(input_tokens=11, output_tokens=7)
+        )
+
+
+@pytest.mark.asyncio
+async def test_message_send_includes_usage_metadata(tmp_path):
+    """Token usage (no first-class A2A field) is surfaced via artifact metadata."""
+    app = build_asgi_app(
+        a2a_settings=A2AServerSettings(),
+        cwd=str(tmp_path),
+        api_client=_UsageClient(),
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            DEFAULT_RPC_URL,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "message/send",
+                "params": {
+                    "message": {
+                        "messageId": "m1",
+                        "role": "user",
+                        "parts": [{"kind": "text", "text": "hi"}],
+                    }
+                },
+            },
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "error" not in body, body
+    artifact = body["result"]["artifacts"][0]
+    usage = (artifact.get("metadata") or {}).get("usage")
+    assert usage is not None, artifact
+    assert int(usage["input_tokens"]) == 11
+    assert int(usage["output_tokens"]) == 7
+    assert int(usage["total_tokens"]) == 18
+
+
 @pytest.mark.asyncio
 async def test_message_send_engine_error_yields_failed_task(tmp_path):
     """Engine error must produce a FAILED task, not a transport-level crash.
