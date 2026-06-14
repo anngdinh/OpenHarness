@@ -22,6 +22,17 @@ def _skills_plugin_root() -> str:
     return str(Path(domo.__file__).parent / "plugin")
 
 
+# domo is a read-only domain assistant: it only needs the shell (kubectl, etc.),
+# its product skills, and the configured datasource MCP tools. Every other
+# built-in tool (file edit/write, task/agent/team orchestration, web, cron, …)
+# is removed so the model never sees it.
+_KEEP_TOOL_NAMES = frozenset({"bash", "skill"})
+
+
+def _is_allowed_tool(name: str) -> bool:
+    return name in _KEEP_TOOL_NAMES or name.startswith("mcp__")
+
+
 def make_build_engine(
     config: DomoConfig, api_client=None
 ) -> Callable[[str], Awaitable[QueryEngine]]:
@@ -52,6 +63,11 @@ def make_build_engine(
         # tool_metadata["session_id"] for session memory, and the A2A path does
         # not use handle_line snapshot persistence.
         engine = bundle.engine
+        # Restrict the toolset to bash + skills + MCP tools (the engine shares
+        # this exact registry, so removed tools are never exposed to the model).
+        for tool in list(bundle.tool_registry.list_tools()):
+            if not _is_allowed_tool(tool.name):
+                bundle.tool_registry.unregister(tool.name)
         # Per-conversation memory: session memory is keyed by session_id.
         engine.tool_metadata["session_id"] = context_id
         # Read-mostly policy (kubectl mutations denied), applied post-build.
