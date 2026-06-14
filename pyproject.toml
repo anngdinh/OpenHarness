@@ -47,6 +47,9 @@ dev = [
 a2a = [
     "a2a-sdk>=1.1,<2",
 ]
+agentbase = [
+    "greennode-agentbase>=1.0,<2",
+]
 
 [project.scripts]
 openharness = "openharness.cli:app"

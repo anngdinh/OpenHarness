@@ -152,8 +152,11 @@ class QueryEngine:
             **kwargs,
         )
 
-    def _prepare_session_memory(self) -> None:
-        """Expose file-backed session memory to compaction when enabled."""
+    def _memory_session_id(self) -> str:
+        return str(self._tool_metadata.get("session_id") or "default")
+
+    async def _prepare_session_memory(self, query: str = "") -> None:
+        """Expose session memory to compaction when enabled."""
 
         if self._settings is None or not self._settings.memory.session_memory_enabled:
             return
@@ -161,11 +164,29 @@ class QueryEngine:
             return
         from openharness.services.session_memory import prepare_session_memory_metadata
 
-        prepare_session_memory_metadata(
-            self._cwd,
-            self._tool_metadata,
-            session_id=str(self._tool_metadata.get("session_id") or "default"),
-        )
+        session_id = self._memory_session_id()
+        path = prepare_session_memory_metadata(self._cwd, self._tool_metadata, session_id=session_id)
+        if self._settings.memory.backend != "agentbase":
+            return
+        # AgentBase: source continuity (recent events) + relevant facts and write
+        # them to the session-memory file so compaction injects them like the file
+        # backend. Best-effort — never let a remote failure break the turn.
+        try:
+            from openharness.services import agentbase_memory as am
+            from openharness.utils.fs import atomic_write_text
+
+            cfg = self._settings.memory.agentbase
+            convo = await am.recent_conversation_text(cfg, session_id, session_id)
+            facts = await am.search_facts_text(cfg, session_id, query) if query.strip() else ""
+            sections = []
+            if facts:
+                sections.append("## Known facts about the user\n" + facts)
+            if convo:
+                sections.append("## Earlier in this conversation\n" + convo)
+            if sections:
+                atomic_write_text(path, "# Session Memory (AgentBase)\n\n" + "\n\n".join(sections) + "\n")
+        except Exception as exc:
+            self._tool_metadata["agentbase_memory_last_error"] = str(exc)
 
     async def _update_session_memory(self) -> None:
         """Persist a session checkpoint after a user turn."""
@@ -174,21 +195,52 @@ class QueryEngine:
             return
         if not self._settings.memory.enabled:
             return
+        if self._settings.memory.backend == "agentbase":
+            await self._agentbase_write_new_turns()
+            return
         from openharness.services.session_memory import update_session_memory_file
 
         update_session_memory_file(
             self._cwd,
             list(self._messages),
             tool_metadata=self._tool_metadata,
-            session_id=str(self._tool_metadata.get("session_id") or "default"),
+            session_id=self._memory_session_id(),
         )
+
+    async def _agentbase_write_new_turns(self) -> None:
+        """Append conversation turns written since the last call as AgentBase events."""
+        try:
+            from openharness.services import agentbase_memory as am
+
+            cfg = self._settings.memory.agentbase
+            session_id = self._memory_session_id()
+            written = int(self._tool_metadata.get("_agentbase_written") or 0)
+            turns = [
+                (m.role, m.text)
+                for m in self._messages[written:]
+                if m.role in ("user", "assistant") and m.text.strip()
+            ]
+            await am.write_turns(cfg, session_id, session_id, turns)
+            self._tool_metadata["_agentbase_written"] = len(self._messages)
+        except Exception as exc:
+            self._tool_metadata["agentbase_memory_last_error"] = str(exc)
 
     async def _extract_durable_memories(self) -> None:
         """Run the optional durable memory extraction pass."""
 
-        if self._settings is None or not self._settings.memory.auto_extract_enabled:
+        if self._settings is None or not self._settings.memory.enabled:
             return
-        if not self._settings.memory.enabled:
+        if self._settings.memory.backend == "agentbase":
+            # AgentBase distils durable facts (memory records) from the session.
+            try:
+                from openharness.services import agentbase_memory as am
+
+                session_id = self._memory_session_id()
+                await am.generate_facts(self._settings.memory.agentbase, session_id, session_id)
+            except Exception as exc:
+                self._tool_metadata["agentbase_memory_last_error"] = str(exc)
+            return
+        if not self._settings.memory.auto_extract_enabled:
             return
         from openharness.services.memory_extract import extract_memories_from_turn
 
@@ -233,7 +285,7 @@ class QueryEngine:
         )
         if user_message.text.strip() and not self._tool_metadata.pop("_suppress_next_user_goal", False):
             remember_user_goal(self._tool_metadata, user_message.text)
-        self._prepare_session_memory()
+        await self._prepare_session_memory(query=user_message.text)
         self._messages = sanitize_conversation_messages(self._messages)
         self._messages.append(user_message)
         if self._hook_executor is not None:
@@ -279,7 +331,7 @@ class QueryEngine:
 
     async def continue_pending(self, *, max_turns: int | None = None) -> AsyncIterator[StreamEvent]:
         """Continue an interrupted tool loop without appending a new user message."""
-        self._prepare_session_memory()
+        await self._prepare_session_memory()
         self._messages = sanitize_conversation_messages(self._messages)
         context = QueryContext(
             api_client=self._api_client,
