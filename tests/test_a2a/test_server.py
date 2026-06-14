@@ -24,6 +24,23 @@ async def test_agent_card_served(tmp_path, fake_client_factory):
 
 
 @pytest.mark.asyncio
+async def test_legacy_well_known_agent_json_alias(tmp_path, fake_client_factory):
+    """Older A2A clients fetch /.well-known/agent.json; serve the same card there."""
+    app = build_asgi_app(
+        a2a_settings=A2AServerSettings(),
+        cwd=str(tmp_path),
+        api_client=fake_client_factory([["hi"]]),
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        modern = await client.get(AGENT_CARD_WELL_KNOWN_PATH)
+        legacy = await client.get("/.well-known/agent.json")
+    assert modern.status_code == 200
+    assert legacy.status_code == 200
+    assert legacy.json() == modern.json()
+
+
+@pytest.mark.asyncio
 async def test_auth_required_when_token_set(tmp_path, fake_client_factory):
     app = build_asgi_app(
         a2a_settings=A2AServerSettings(auth_token="secret"),

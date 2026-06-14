@@ -68,7 +68,13 @@ def build_asgi_app(
         push_config_store=push_store,
         push_sender=push_sender,
     )
-    routes = create_agent_card_routes(card) + create_jsonrpc_routes(handler, DEFAULT_RPC_URL, enable_v0_3_compat=True)
+    routes = (
+        create_agent_card_routes(card)
+        # Legacy A2A well-known path (older clients fetch /.well-known/agent.json
+        # instead of the 1.x /.well-known/agent-card.json). Same card, same JSON.
+        + create_agent_card_routes(card, card_url="/.well-known/agent.json")
+        + create_jsonrpc_routes(handler, DEFAULT_RPC_URL, enable_v0_3_compat=True)
+    )
 
     @asynccontextmanager
     async def _lifespan(app):
