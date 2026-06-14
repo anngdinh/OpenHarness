@@ -27,6 +27,7 @@ def test_tool_start_becomes_status():
     intent = map_stream_event(ToolExecutionStarted(tool_name="bash", tool_input={}))
     assert isinstance(intent, StatusUpdate)
     assert "bash" in intent.text
+    assert intent.metadata == {"type": "tool", "tool": "bash", "phase": "start"}
 
 
 def test_tool_completed_becomes_status():
@@ -34,10 +35,18 @@ def test_tool_completed_becomes_status():
         ToolExecutionCompleted(tool_name="bash", output="x", is_error=False, metadata={})
     )
     assert isinstance(intent, StatusUpdate)
+    assert intent.metadata == {
+        "type": "tool",
+        "tool": "bash",
+        "phase": "end",
+        "is_error": False,
+    }
 
 
 def test_status_event_becomes_status():
-    assert isinstance(map_stream_event(StatusEvent(message="compacting")), StatusUpdate)
+    intent = map_stream_event(StatusEvent(message="compacting"))
+    assert isinstance(intent, StatusUpdate)
+    assert intent.metadata == {"type": "status"}
 
 
 def test_error_event_becomes_failure():

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from openharness.engine.stream_events import (
     AssistantTextDelta,
@@ -25,9 +26,15 @@ class ArtifactChunk:
 
 @dataclass(frozen=True)
 class StatusUpdate:
-    """A human-readable progress message (task stays `working`)."""
+    """A human-readable progress message (task stays `working`).
+
+    ``metadata`` is attached to the A2A status message so a streaming client can
+    distinguish progress kinds (e.g. ``{"type": "tool", ...}``) from the answer
+    artifact, instead of guessing from the text.
+    """
 
     text: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -45,12 +52,26 @@ def map_stream_event(event: StreamEvent) -> A2AIntent | None:
     if isinstance(event, AssistantTextDelta):
         return ArtifactChunk(text=event.text)
     if isinstance(event, ToolExecutionStarted):
-        return StatusUpdate(text=f"\U0001f527 {event.tool_name}…")
+        return StatusUpdate(
+            text=f"\U0001f527 {event.tool_name}…",
+            metadata={"type": "tool", "tool": event.tool_name, "phase": "start"},
+        )
     if isinstance(event, ToolExecutionCompleted):
         mark = "⚠️" if event.is_error else "✓"
-        return StatusUpdate(text=f"{mark} {event.tool_name}")
+        return StatusUpdate(
+            text=f"{mark} {event.tool_name}",
+            metadata={
+                "type": "tool",
+                "tool": event.tool_name,
+                "phase": "end",
+                "is_error": event.is_error,
+            },
+        )
     if isinstance(event, (StatusEvent, CompactProgressEvent)):
-        return StatusUpdate(text=getattr(event, "message", "") or "working…")
+        return StatusUpdate(
+            text=getattr(event, "message", "") or "working…",
+            metadata={"type": "status"},
+        )
     if isinstance(event, ErrorEvent):
         return Failure(text=event.message)
     if isinstance(event, AssistantTurnComplete):

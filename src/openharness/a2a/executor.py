@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -31,20 +32,33 @@ class HarnessAgentExecutor(AgentExecutor):
         session = await self._sessions.get_or_create(context.context_id)
         prompt = context.get_user_input()
 
-        buffer = ""
+        # Stream the answer as artifact-update chunks (kind=artifact-update) so a
+        # client can render it live and tell it apart from progress. Tool/status
+        # events go out as status-update (kind=status-update) with metadata. One
+        # chunk is held back so the final one can carry last_chunk=True.
+        artifact_id = uuid.uuid4().hex
+        pending: str | None = None
+        started = False  # the artifact has been created (first chunk: append=False)
         try:
             async for event in session.engine.submit_message(prompt):
                 intent = map_stream_event(event)
                 if isinstance(intent, ArtifactChunk):
-                    buffer += intent.text
-                    await updater.update_status(
-                        TaskState.TASK_STATE_WORKING,
-                        message=updater.new_agent_message([Part(text=intent.text)]),
-                    )
+                    if pending is not None:
+                        await updater.add_artifact(
+                            [Part(text=pending)],
+                            artifact_id=artifact_id,
+                            name=_ARTIFACT_NAME,
+                            append=started,
+                            last_chunk=False,
+                        )
+                        started = True
+                    pending = intent.text
                 elif isinstance(intent, StatusUpdate):
                     await updater.update_status(
                         TaskState.TASK_STATE_WORKING,
-                        message=updater.new_agent_message([Part(text=intent.text)]),
+                        message=updater.new_agent_message(
+                            [Part(text=intent.text)], metadata=intent.metadata or None
+                        ),
                     )
                 elif isinstance(intent, Failure):
                     await updater.failed(
@@ -58,7 +72,24 @@ class HarnessAgentExecutor(AgentExecutor):
             )
             return
 
-        await updater.add_artifact([Part(text=buffer)], name=_ARTIFACT_NAME)
+        # Flush the final answer chunk, marking the artifact stream complete.
+        if pending is not None:
+            await updater.add_artifact(
+                [Part(text=pending)],
+                artifact_id=artifact_id,
+                name=_ARTIFACT_NAME,
+                append=started,
+                last_chunk=True,
+            )
+        elif not started:
+            # No assistant text at all — still emit one (empty) artifact so a
+            # blocking message/send returns a well-formed result.
+            await updater.add_artifact(
+                [Part(text="")],
+                artifact_id=artifact_id,
+                name=_ARTIFACT_NAME,
+                last_chunk=True,
+            )
         await updater.complete()
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:

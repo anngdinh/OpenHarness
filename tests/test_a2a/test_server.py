@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -144,3 +146,54 @@ async def test_message_send_end_to_end(tmp_path, fake_client_factory):
     artifacts = body["result"]["artifacts"]
     texts = "".join(p.get("text", "") for a in artifacts for p in a["parts"])
     assert "Pong" in texts
+
+
+@pytest.mark.asyncio
+async def test_message_stream_answer_arrives_as_artifact_updates(tmp_path, fake_client_factory):
+    """The streamed answer must arrive as artifact-update events (not status).
+
+    Tokens map to kind=artifact-update so a client can render the live answer and
+    distinguish it from status-update progress (tool/system messages).
+    """
+    app = build_asgi_app(
+        a2a_settings=A2AServerSettings(),
+        cwd=str(tmp_path),
+        api_client=fake_client_factory([["Hello", " ", "World"]]),
+    )
+    transport = httpx.ASGITransport(app=app)
+    kinds: list[str] = []
+    artifact_text = ""
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with client.stream(
+            "POST",
+            DEFAULT_RPC_URL,
+            headers={"Accept": "text/event-stream"},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "message/stream",
+                "params": {
+                    "message": {
+                        "messageId": "m1",
+                        "role": "user",
+                        "parts": [{"kind": "text", "text": "hi"}],
+                    }
+                },
+            },
+        ) as resp:
+            assert resp.status_code == 200
+            async for line in resp.aiter_lines():
+                line = line.strip()
+                if not line.startswith("data:"):
+                    continue
+                event = json.loads(line[len("data:"):].strip())
+                result = event.get("result", event)
+                kind = result.get("kind")
+                if kind:
+                    kinds.append(kind)
+                if kind == "artifact-update":
+                    artifact = result.get("artifact") or {}
+                    artifact_text += "".join(p.get("text", "") for p in artifact.get("parts", []))
+    # The answer came through as artifact-update events and reassembles in order.
+    assert "artifact-update" in kinds, kinds
+    assert artifact_text == "Hello World", artifact_text
