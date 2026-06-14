@@ -33,6 +33,39 @@ def _is_allowed_tool(name: str) -> bool:
     return name in _KEEP_TOOL_NAMES or name.startswith("mcp__")
 
 
+async def _agentbase_recall(context_id: str) -> str:
+    """When the AgentBase memory backend is active, fetch prior context for this
+    user (durable facts + recent conversation) so it can be injected into the
+    system prompt — the channel that actually reaches the model every turn (the
+    session-memory file is only injected at compaction). Best-effort.
+    """
+    from openharness.config.settings import load_settings
+
+    memory = load_settings().memory
+    if memory.backend != "agentbase" or not memory.enabled:
+        return ""
+    try:
+        from openharness.services import agentbase_memory as am
+
+        cfg = memory.agentbase
+        facts = await am.all_facts_text(cfg, context_id)
+        convo = await am.recent_conversation_text(cfg, context_id, context_id, limit=20)
+    except Exception:
+        return ""
+    sections = []
+    if facts:
+        sections.append("Known facts about this user:\n" + facts)
+    if convo:
+        sections.append("Recent conversation with this user:\n" + convo)
+    if not sections:
+        return ""
+    return (
+        "\n\n# Memory — prior context for this user\n"
+        "Use it to personalize and maintain continuity; do not repeat it verbatim.\n\n"
+        + "\n\n".join(sections)
+    )
+
+
 def make_build_engine(
     config: DomoConfig, api_client=None
 ) -> Callable[[str], Awaitable[QueryEngine]]:
@@ -50,8 +83,11 @@ def make_build_engine(
         plugin_roots.append(str(mcp_root))
 
     async def build_engine(context_id: str) -> QueryEngine:
+        # Cross-session recall: inject AgentBase memory into the system prompt at
+        # build time (no-op for the file backend).
+        system_prompt = PERSONA + await _agentbase_recall(context_id)
         bundle = await build_runtime(
-            system_prompt=PERSONA,
+            system_prompt=system_prompt,
             cwd=config.cwd,
             model=config.model,
             api_client=api_client,

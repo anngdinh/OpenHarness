@@ -103,6 +103,20 @@ async def search_facts_text(
     return "\n".join(f"- {fact}" for fact in facts if fact)
 
 
+async def all_facts_text(config: "AgentBaseMemoryConfig", actor: str) -> str:
+    """Browse all durable memory records for an actor; one fact per line."""
+    client = _client(config)
+    try:
+        result = await client.list_memory_records_async(
+            id=config.memory_id, namespace=_namespace(config, actor)
+        )
+    finally:
+        await client.close()
+    records = list(getattr(result, "list_data", result) or [])
+    facts = [(getattr(r, "memory", None) or "").strip() for r in records]
+    return "\n".join(f"- {fact}" for fact in facts if fact)
+
+
 async def generate_facts(config: "AgentBaseMemoryConfig", actor: str, session: str) -> None:
     """Trigger long-term record generation from the session (async, best-effort)."""
     client = _client(config)
