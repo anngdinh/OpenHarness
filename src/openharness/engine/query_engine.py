@@ -16,6 +16,7 @@ from openharness.hooks import HookEvent, HookExecutor
 from openharness.permissions.checker import PermissionChecker
 from openharness.services.autodream.service import schedule_auto_dream
 from openharness.tools.base import ToolRegistry
+from openharness import observability as obs
 
 
 class QueryEngine:
@@ -334,12 +335,22 @@ class QueryEngine:
         if coordinator_context is not None:
             query_messages.append(coordinator_context)
         try:
-            async for event, usage in run_query(context, query_messages):
-                if isinstance(event, AssistantTurnComplete):
-                    self._messages = list(query_messages)
-                if usage is not None:
-                    self._cost_tracker.add(usage)
-                yield event
+            with obs.user_input_span(
+                session_id=str(self._tool_metadata.get("session_id") or ""),
+                conversation_id=str(
+                    self._tool_metadata.get("conversation_id")
+                    or self._tool_metadata.get("session_id")
+                    or ""
+                ),
+                model=self._model,
+                entrypoint=str(self._tool_metadata.get("entrypoint") or "cli"),
+            ):
+                async for event, usage in run_query(context, query_messages):
+                    if isinstance(event, AssistantTurnComplete):
+                        self._messages = list(query_messages)
+                    if usage is not None:
+                        self._cost_tracker.add(usage)
+                    yield event
         finally:
             await self._update_session_memory()
             await self._extract_durable_memories()
@@ -366,9 +377,19 @@ class QueryEngine:
             hook_executor=self._hook_executor,
             tool_metadata=self._tool_metadata,
         )
-        async for event, usage in run_query(context, self._messages):
-            if usage is not None:
-                self._cost_tracker.add(usage)
-            yield event
+        with obs.user_input_span(
+            session_id=str(self._tool_metadata.get("session_id") or ""),
+            conversation_id=str(
+                self._tool_metadata.get("conversation_id")
+                or self._tool_metadata.get("session_id")
+                or ""
+            ),
+            model=self._model,
+            entrypoint=str(self._tool_metadata.get("entrypoint") or "cli"),
+        ):
+            async for event, usage in run_query(context, self._messages):
+                if usage is not None:
+                    self._cost_tracker.add(usage)
+                yield event
         await self._update_session_memory()
         await self._extract_durable_memories()
