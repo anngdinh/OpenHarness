@@ -57,9 +57,20 @@ class PermissionSettings(BaseModel):
     denied_commands: list[str] = Field(default_factory=list)
 
 
+class AgentBaseMemoryConfig(BaseModel):
+    """Config for the AgentBase memory backend (secrets stay in env/.greennode.json)."""
+
+    memory_id: str = ""
+    strategy_id: str = ""
+    base_url: str | None = None
+
+
 class MemorySettings(BaseModel):
     """Memory system configuration."""
 
+    # Memory backend: "file" (default, local files) or "agentbase" (remote service).
+    backend: str = "file"
+    agentbase: AgentBaseMemoryConfig = Field(default_factory=AgentBaseMemoryConfig)
     enabled: bool = True
     max_files: int = 5
     max_entrypoint_lines: int = 200

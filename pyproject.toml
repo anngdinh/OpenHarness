@@ -44,15 +44,22 @@ dev = [
     "ruff>=0.5.0",
     "mypy>=1.10.0",
 ]
+a2a = [
+    "a2a-sdk>=1.1,<2",
+]
+agentbase = [
+    "greennode-agentbase>=1.0,<2",
+]
 
 [project.scripts]
 openharness = "openharness.cli:app"
 oh = "openharness.cli:app"
 openh = "openharness.cli:app"
 ohmo = "ohmo.cli:app"
+domo = "domo.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/openharness", "ohmo"]
+packages = ["src/openharness", "ohmo", "domo"]
 
 [tool.hatch.build]
 exclude = [

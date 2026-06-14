@@ -423,3 +423,17 @@ async def test_cron_create_agent_turn_payload(tmp_path: Path, monkeypatch):
     assert "daily-summary" in list_result.output
     assert "Asia/Hong_Kong" in list_result.output
     assert "payload: agent_turn -> feishu:ou_test" in list_result.output
+
+
+def test_tool_registry_unregister():
+    from openharness.tools.base import ToolRegistry
+
+    registry = ToolRegistry()
+    registry.register(BashTool())
+    assert registry.get("bash") is not None
+    registry.unregister("bash")
+    assert registry.get("bash") is None
+    assert "bash" not in [t.name for t in registry.list_tools()]
+    # idempotent: removing an absent tool is a no-op
+    registry.unregister("bash")
+    registry.unregister("never-registered")

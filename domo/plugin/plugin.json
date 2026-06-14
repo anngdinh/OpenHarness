@@ -1,0 +1,6 @@
+{
+  "name": "domo-skills",
+  "version": "0.1.0",
+  "description": "Bundled product-knowledge skills for the domo domain assistant.",
+  "skills_dir": "skills"
+}
