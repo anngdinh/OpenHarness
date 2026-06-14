@@ -46,9 +46,11 @@ def init_tracing() -> None:
     else:
         return
 
+    import importlib.metadata
+
     try:
-        from openharness import __version__ as version
-    except Exception:
+        version = importlib.metadata.version("openharness")
+    except importlib.metadata.PackageNotFoundError:
         version = "unknown"
 
     resource = Resource.create(
@@ -65,15 +67,19 @@ def init_tracing() -> None:
 
 def _build_otlp_exporter() -> Any:
     try:
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+            OTLPSpanExporter as HttpExporter,
+        )
 
-        return OTLPSpanExporter()
+        return HttpExporter()
     except ImportError:
         pass
     try:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+            OTLPSpanExporter as GrpcExporter,
+        )
 
-        return OTLPSpanExporter()
+        return GrpcExporter()
     except ImportError:
         return None
 

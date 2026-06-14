@@ -2383,6 +2383,10 @@ def main(
         lvl = getattr(logging, os.environ["OPENHARNESS_LOG_LEVEL"].upper(), logging.WARNING)
         logging.basicConfig(level=lvl, format="%(asctime)s [%(name)s] %(levelname)s %(message)s", stream=sys.stderr)
 
+    from openharness import observability as obs
+
+    obs.init_tracing()
+
     if dangerously_skip_permissions:
         permission_mode = "full_auto"
 

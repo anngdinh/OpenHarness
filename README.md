@@ -500,6 +500,26 @@ flowchart LR
     X --> Q
 ```
 
+### Observability (OpenTelemetry)
+
+The agent loop is instrumented with OpenTelemetry. Tracing is **off by default**;
+enable it with the standard `OTEL_*` environment variables and the optional extra:
+
+```bash
+pip install 'openharness-ai[observability]'
+
+# Print spans to the console:
+OTEL_TRACES_EXPORTER=console oh
+
+# Or send them to a local Jaeger / OTLP collector:
+OTEL_TRACES_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 oh
+```
+
+Each user input produces one trace: `user_input → turn → {chat, execute_tool}`,
+with token usage, finish reasons, tool names, errors, and timings. Prompt and
+tool-I/O payloads are attached only when
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`.
+
 ---
 
 ## ✨ Features

@@ -43,12 +43,17 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.5.0",
     "mypy>=1.10.0",
+    "opentelemetry-sdk>=1.20",
 ]
 a2a = [
     "a2a-sdk>=1.1,<2",
 ]
 agentbase = [
     "greennode-agentbase>=1.0,<2",
+]
+observability = [
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp>=1.20",
 ]
 
 [project.scripts]
@@ -90,3 +95,9 @@ target-version = "py311"
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+# opentelemetry is an optional ("observability") dependency and ships no py.typed
+# marker, so treat it as untyped rather than failing strict checks.
+[[tool.mypy.overrides]]
+module = ["opentelemetry.*"]
+ignore_missing_imports = true

@@ -15,7 +15,7 @@ from __future__ import annotations
 import contextvars
 import json
 import os
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from typing import Any, Iterator
 
 from openharness.observability.tracing import get_tracer
@@ -110,7 +110,9 @@ def _span(name: str, attrs: dict[str, Any] | None = None) -> Iterator[_Span]:
             pass
 
 
-def user_input_span(*, session_id: str, conversation_id: str, model: str, entrypoint: str):
+def user_input_span(
+    *, session_id: str, conversation_id: str, model: str, entrypoint: str
+) -> AbstractContextManager[_Span]:
     return _span(
         "user_input",
         {
@@ -122,11 +124,11 @@ def user_input_span(*, session_id: str, conversation_id: str, model: str, entryp
     )
 
 
-def turn_span(index: int):
+def turn_span(index: int) -> AbstractContextManager[_Span]:
     return _span("turn", {"openharness.turn.index": index})
 
 
-def model_call_span(model: str, system: str = "anthropic"):
+def model_call_span(model: str, system: str = "anthropic") -> AbstractContextManager[_Span]:
     return _span(
         f"chat {model}",
         {
