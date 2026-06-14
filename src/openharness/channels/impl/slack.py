@@ -179,8 +179,8 @@ class SlackChannel(BaseChannel):
         except Exception as e:
             logger.debug("Slack reactions_add failed: %s", e)
 
-        # Preserve Slack thread metadata for reply routing, but let the ohmo
-        # gateway router derive the session key.  The router includes sender
+        # Preserve Slack thread metadata for reply routing, but let the
+        # channel router derive the session key.  The router includes sender
         # identity for shared chats; passing a senderless Slack override here
         # would make different people in the same thread share one session.
         chat_type = "p2p" if channel_type == "im" else "group"

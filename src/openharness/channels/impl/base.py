@@ -19,13 +19,7 @@ def resolve_channel_media_dir(channel_name: str) -> Path:
     if custom_root:
         root = Path(custom_root).expanduser().resolve()
     else:
-        ohmo_workspace = os.environ.get("OHMO_WORKSPACE")
-        if ohmo_workspace:
-            from ohmo.workspace import get_attachments_dir
-
-            root = get_attachments_dir(ohmo_workspace)
-        else:
-            root = get_data_dir() / "media"
+        root = get_data_dir() / "media"
     media_dir = root / channel_name
     media_dir.mkdir(parents=True, exist_ok=True)
     return media_dir

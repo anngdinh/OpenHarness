@@ -14,7 +14,6 @@
 - multi-agent coordination
 - provider workflows
 - React TUI
-- `ohmo` personal-agent app
 
 ---
 
@@ -237,75 +236,6 @@ oh provider use <profile>
 
 ---
 
-## `ohmo` Personal Agent
-
-`ohmo` 是基于 OpenHarness 的 personal-agent app，不是 core 的一个 mode。
-
-### 初始化
-
-```bash
-ohmo init
-```
-
-这会创建：
-
-- `~/.ohmo/soul.md`
-- `~/.ohmo/identity.md`
-- `~/.ohmo/user.md`
-- `~/.ohmo/BOOTSTRAP.md`
-- `~/.ohmo/memory/`
-- `~/.ohmo/gateway.json`
-
-其中：
-
-- `soul.md`：长期人格与行为原则
-- `identity.md`：`ohmo` 自己是谁
-- `user.md`：用户画像、偏好、关系信息
-- `BOOTSTRAP.md`：首轮 landing / onboarding ritual
-- `memory/`：personal memory
-- `gateway.json`：gateway 的 profile 和 channel 配置
-
-### 配置
-
-```bash
-ohmo config
-```
-
-`ohmo config` 会用和 `oh setup` 一致的 workflow 语言来配置 gateway，例如：
-
-- `Anthropic-Compatible API`
-- `Claude Subscription`
-- `OpenAI-Compatible API`
-- `Codex Subscription`
-- `GitHub Copilot`
-
-目前 `ohmo init` / `ohmo config` 已支持引导式配置这些 channel：
-
-- Telegram
-- Slack
-- Discord
-- Feishu
-
-如果 gateway 已经在运行，配置完成后也可以直接选择是否重启。
-
-### 运行
-
-```bash
-# 运行 personal agent
-ohmo
-
-# 前台运行 gateway
-ohmo gateway run
-
-# 查看 gateway 状态
-ohmo gateway status
-
-# 重启 gateway
-ohmo gateway restart
-```
-
----
-
 ## OpenHarness 的核心能力
 
 ### Agent Loop
@@ -358,17 +288,6 @@ oh provider use codex
 oh auth status
 oh -p "Explain this codebase"
 oh
-```
-
-### `ohmo`
-
-```bash
-ohmo init
-ohmo config
-ohmo
-ohmo gateway run
-ohmo gateway status
-ohmo gateway restart
 ```
 
 ---

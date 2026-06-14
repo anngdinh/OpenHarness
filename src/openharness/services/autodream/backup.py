@@ -14,12 +14,6 @@ def default_backup_root(memory_dir: str | Path, *, app_label: str = "openharness
     """Return the backup root for a memory directory."""
 
     memory_dir = Path(memory_dir).expanduser().resolve()
-    if ".ohmo" in memory_dir.parts:
-        try:
-            idx = memory_dir.parts.index(".ohmo")
-            return Path(*memory_dir.parts[: idx + 1]) / "backups"
-        except ValueError:
-            pass
     safe_label = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in app_label).strip("-")
     return get_data_dir() / "memory-backups" / (safe_label or "openharness")
 

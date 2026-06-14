@@ -104,7 +104,6 @@ async def start_dream_now(
     memory_dir: str | Path | None = None,
     session_dir: str | Path | None = None,
     app_label: str = "openharness",
-    runner_module: str = "openharness",
     preview: bool = False,
 ) -> TaskRecord | None:
     """Start a dream task immediately, optionally bypassing time/session gates."""
@@ -171,28 +170,20 @@ async def start_dream_now(
         argv = [
             sys.executable,
             "-m",
-            runner_module,
+            "openharness",
+            "--dangerously-skip-permissions",
         ]
-        if runner_module == "openharness":
-            argv.append("--dangerously-skip-permissions")
-        if runner_module == "ohmo":
-            workspace = resolved_memory_dir.parent
-            argv.extend(["--workspace", str(workspace)])
-            if settings.active_profile:
-                argv.extend(["--profile", settings.active_profile])
         if model:
             argv.extend(["--model", model])
-        if runner_module == "openharness" and settings.provider != "anthropic_claude":
+        if settings.provider != "anthropic_claude":
             if settings.base_url:
                 argv.extend(["--base-url", settings.base_url])
             if settings.api_format:
                 argv.extend(["--api-format", settings.api_format])
         try:
             auth = settings.resolve_auth()
-            if runner_module == "openharness" and auth.auth_kind == "api_key":
+            if auth.auth_kind == "api_key":
                 argv.extend(["--api-key", auth.value])
-            elif runner_module == "ohmo" and auth.auth_kind == "api_key":
-                env["OPENHARNESS_API_KEY"] = auth.value
             elif auth.value:
                 env["ANTHROPIC_AUTH_TOKEN"] = auth.value
                 env.pop("ANTHROPIC_API_KEY", None)
@@ -222,7 +213,7 @@ async def start_dream_now(
             "session_dir": str(resolved_session_dir),
             "force": str(force).lower(),
             "app_label": app_label,
-            "runner_module": runner_module,
+            "runner_module": "openharness",
             "preview": str(preview).lower(),
             "backup_dir": str(backup_dir or ""),
         }
@@ -254,7 +245,6 @@ async def execute_auto_dream(
     memory_dir: str | Path | None = None,
     session_dir: str | Path | None = None,
     app_label: str = "openharness",
-    runner_module: str = "openharness",
     preview: bool = False,
 ) -> TaskRecord | None:
     """Run the cheap auto-dream gates and start a background dream when eligible."""
@@ -298,7 +288,6 @@ async def execute_auto_dream(
         memory_dir=resolved_memory_dir,
         session_dir=resolved_session_dir,
         app_label=app_label,
-        runner_module=runner_module,
         preview=preview,
     )
 

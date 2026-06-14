@@ -3,7 +3,7 @@ name: skill-creator
 description: >
   Create, improve, and verify OpenHarness skills. Use this whenever the user
   asks to create a new skill, convert a workflow into a skill, update an
-  existing SKILL.md, add skills for oh/ohmo, design skill trigger behavior,
+  existing SKILL.md, add skills for oh, design skill trigger behavior,
   or test whether a skill loads and works correctly.
 ---
 
@@ -18,7 +18,7 @@ Use this skill when the user wants to:
 - create a new skill from a workflow, repeated task, domain guide, or tool process
 - convert existing notes, prompts, or instructions into a reusable skill
 - modify or harden an existing skill
-- make a skill available to `oh`, `ohmo`, or a plugin
+- make a skill available to `oh` or a plugin
 - debug why the `skill` tool cannot find or load a skill
 - test trigger wording, skill metadata, or skill behavior
 
@@ -28,7 +28,6 @@ Choose the target deliberately:
 
 - Built-in OpenHarness skills live in `src/openharness/skills/bundled/content/*.md`.
 - User skills for `oh` live in `~/.openharness/skills/<skill-dir>/SKILL.md`.
-- Private `ohmo` skills live in `~/.ohmo/skills/<skill-dir>/SKILL.md`.
 - Plugin skills live in `<plugin-root>/skills/<skill-dir>/SKILL.md`.
 
 OpenHarness user and plugin skills use a directory layout. Do not create flat
@@ -36,7 +35,7 @@ OpenHarness user and plugin skills use a directory layout. Do not create flat
 
 ## Skill anatomy
 
-Use this structure for user, ohmo, and plugin skills:
+Use this structure for user and plugin skills:
 
 ```text
 my-skill/
@@ -82,7 +81,7 @@ Important boundaries, verification, and failure handling.
 
 2. Inspect existing examples.
    Read nearby skills and loader behavior before choosing a layout. For
-   OpenHarness, confirm whether the target is bundled, user, ohmo-private, or
+   OpenHarness, confirm whether the target is bundled, user, or
    plugin-provided.
 
 3. Write the metadata first.
@@ -112,16 +111,8 @@ Important boundaries, verification, and failure handling.
    PY
    ```
 
-   For ohmo-private skills, include the extra skill directory:
-
-   ```bash
-   PYTHONPATH=src python - <<'PY'
-   from openharness.skills import load_skill_registry
-   from ohmo.workspace import get_skills_dir
-   for skill in load_skill_registry(extra_skill_dirs=[get_skills_dir()]).list_skills():
-       print(skill.name, skill.source, skill.path)
-   PY
-   ```
+   To include skills from an extra directory, pass `extra_skill_dirs=[...]` to
+   `load_skill_registry`.
 
 7. Test behavior.
    Create two or three realistic prompts that should use the skill. If the skill

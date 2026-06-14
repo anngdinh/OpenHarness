@@ -56,7 +56,7 @@ def _configured_bot_names(config: FeishuConfig) -> set[str]:
     else:
         items = [str(item).strip() for item in raw_names]
     names = {_normalize_mention_name(item) for item in items if item.strip()}
-    return names or {"ohmo"}
+    return names or {"openharness"}
 
 
 def _mention_value(raw: Any, key: str) -> Any:
@@ -165,41 +165,19 @@ def _normalize_feishu_group_policy(value: str | None) -> str:
     return "managed_or_mention"
 
 
-def _is_ohmo_managed_feishu_group(chat_id: str) -> bool:
-    workspace = os.environ.get("OHMO_WORKSPACE")
-    if not workspace:
-        return False
-    try:
-        from ohmo.group_registry import load_managed_group_record
-
-        return load_managed_group_record(
-            workspace=workspace,
-            channel="feishu",
-            chat_id=chat_id,
-        ) is not None
-    except Exception:
-        logger.exception("Failed to load ohmo managed Feishu group metadata chat_id=%s", chat_id)
-        return False
-
-
 def _should_process_feishu_group_message(
     *,
     chat_type: str,
-    chat_id: str,
     mentions_bot: bool,
     config: FeishuConfig,
 ) -> bool:
     if str(chat_type or "").strip().lower() != "group":
         return True
-    policy = _normalize_feishu_group_policy(getattr(config, "group_policy", "managed_or_mention"))
+    policy = _normalize_feishu_group_policy(getattr(config, "group_policy", "mention"))
     if policy == "open":
         return True
-    if policy == "mention":
-        return mentions_bot
-    if policy == "managed":
-        return _is_ohmo_managed_feishu_group(chat_id)
-    if policy == "managed_or_mention":
-        return mentions_bot or _is_ohmo_managed_feishu_group(chat_id)
+    # "managed"/"managed_or_mention" relied on an external managed-group
+    # registry that is no longer bundled; both fall back to mention-only.
     return mentions_bot
 
 
@@ -1034,7 +1012,7 @@ class FeishuChannel(BaseChannel):
         return str(chat_id)
 
     async def create_managed_group(self, *, user_open_id: str, name: str) -> str:
-        """Create a Feishu group for a single user and the ohmo bot."""
+        """Create a Feishu group for a single user and the configured bot."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._create_managed_group_sync, user_open_id, name)
 
@@ -1297,7 +1275,6 @@ class FeishuChannel(BaseChannel):
             )
             if not _should_process_feishu_group_message(
                 chat_type=chat_type,
-                chat_id=chat_id,
                 mentions_bot=mentions_bot,
                 config=self.config,
             ):

@@ -261,7 +261,6 @@ Write-Step "Verifying installation"
 $OhPath = "$VenvBinDir\oh.exe"
 $OpenhPath = "$VenvBinDir\openh.exe"
 $OpenharnessPath = "$VenvBinDir\openharness.exe"
-$OhmoPath = "$VenvBinDir\ohmo.exe"
 
 # Pick the best available launcher. The 'openh' alias was added after v0.1.6,
 # so PyPI installs of older releases won't have openh.exe. Prefer it when
@@ -280,7 +279,7 @@ if (Test-Path $OpenhPath) {
     $LauncherExe = $OhPath
 }
 
-if ($LauncherExe -and (Test-Path $OhmoPath)) {
+if ($LauncherExe) {
     $OhVersion = & $LauncherExe --version 2>&1
     Write-Success "Installation successful!"
     Write-Host ""
@@ -291,7 +290,6 @@ if ($LauncherExe -and (Test-Path $OhmoPath)) {
     } elseif (Test-Path $OhPath) {
         Write-Host "  'oh' is also installed, but PowerShell may resolve it to Out-Host first." -ForegroundColor Yellow
     }
-    Write-Host "  ohmo is ready" -ForegroundColor Green
 } else {
     # Try module execution
     $ModuleVersion = python -m openharness --version 2>&1
@@ -324,6 +322,5 @@ if ($Launcher -eq "openharness") {
     Write-Host "    3. Launch (PowerShell):     openh"
     Write-Host "       Note: 'oh' may collide with the built-in Out-Host alias in PowerShell."
 }
-Write-Host "    4. Launch ohmo:             ohmo"
-Write-Host "    5. Docs:                    https://github.com/HKUDS/OpenHarness"
+Write-Host "    4. Docs:                    https://github.com/HKUDS/OpenHarness"
 Write-Host ""

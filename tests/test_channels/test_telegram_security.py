@@ -24,7 +24,7 @@ def test_silence_telegram_token_url_loggers_raises_dependency_log_levels():
 
 @pytest.mark.asyncio
 async def test_telegram_start_and_help_use_configured_bot_name():
-    channel = TelegramChannel(TelegramConfig(token="token", bot_name="ohmo", allow_from=["*"]), MessageBus())
+    channel = TelegramChannel(TelegramConfig(token="token", bot_name="openharness", allow_from=["*"]), MessageBus())
     message = SimpleNamespace(chat_id=1, reply_text=AsyncMock())
     user = SimpleNamespace(first_name="Jabin")
     update = SimpleNamespace(message=message, effective_user=user)
@@ -34,8 +34,8 @@ async def test_telegram_start_and_help_use_configured_bot_name():
 
     start_text = message.reply_text.await_args_list[0].args[0]
     help_text = message.reply_text.await_args_list[1].args[0]
-    assert "I'm ohmo" in start_text
-    assert "ohmo commands" in help_text
+    assert "I'm openharness" in start_text
+    assert "openharness commands" in help_text
     assert "nanobot" not in start_text
     assert "nanobot" not in help_text
 

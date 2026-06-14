@@ -1,9 +1,7 @@
 <h1 align="center">
   <img src="assets/logo.png" alt="OpenHarness" width="64" style="vertical-align: middle;">
-  &nbsp;&nbsp;
-  <img src="assets/ohmo.png" alt="ohmo" width="64" style="vertical-align: middle;">
   <br>
-  <code>oh</code> — OpenHarness &amp; <code>ohmo</code>
+  <code>oh</code> — OpenHarness
 </h1>
 
 <p align="center">
@@ -12,8 +10,6 @@
 </p>
 
 **OpenHarness** delivers core lightweight agent infrastructure: tool-use, skills, memory, and multi-agent coordination.
-
-**ohmo** is a personal AI agent built on OpenHarness — not another chatbot, but an assistant that actually works for you over long sessions. Chat with ohmo in Feishu / Slack / Telegram / Discord, and it forks branches, writes code, runs tests, and opens PRs on its own. ohmo runs on your existing Claude Code or Codex subscription — no extra API key needed.
 
 **Join the community**: contribute **Harness** for open agent development.
 
@@ -239,18 +235,6 @@ oh
 <p align="center">
   <img src="assets/landing.png" alt="OpenHarness Landing Screen" width="700">
 </p>
-
-### 4. Set up ohmo (Personal Agent)
-
-Want an AI agent that works for you from Feishu / Slack / Telegram / Discord?
-
-```bash
-ohmo init             # initialize ~/.ohmo workspace
-ohmo config           # configure channels and provider
-ohmo gateway start    # start the gateway — ohmo is now live in your chat app
-```
-
-ohmo runs on your existing **Claude Code subscription** or **Codex subscription** — no extra API key needed.
 
 ### Non-Interactive Mode (Pipes & Scripts)
 
@@ -541,7 +525,7 @@ Available Skills:
 - ... 40+ more
 ```
 
-Skills can live in bundled, user, ohmo, project, or plugin locations. User-level skills are loaded from:
+Skills can live in bundled, user, project, or plugin locations. User-level skills are loaded from:
 
 ```text
 ~/.openharness/skills/<skill>/SKILL.md
@@ -659,62 +643,6 @@ Advanced:    -d/--debug, --mcp-config, --bare
 
 Subcommands: oh setup | oh provider | oh auth | oh mcp | oh plugin
 ```
-
-### 🧑‍💼 ohmo Personal Agent
-
-`ohmo` is a personal-agent app built on top of OpenHarness. It is packaged alongside `oh`, with its own workspace and gateway:
-
-```bash
-# Initialize personal workspace
-ohmo init
-
-# Configure gateway channels and pick a provider profile
-ohmo config
-
-# Run the personal agent
-ohmo
-
-# Run the gateway in foreground
-ohmo gateway run
-
-# Check or restart the gateway
-ohmo gateway status
-ohmo gateway restart
-```
-
-Key concepts:
-
-- `~/.ohmo/`
-  - personal workspace root
-- `soul.md`
-  - long-term agent personality and behavior
-- `identity.md`
-  - who `ohmo` is
-- `user.md`
-  - user profile and preferences
-- `BOOTSTRAP.md`
-  - first-run landing ritual
-- `memory/`
-  - personal memory
-- `gateway.json`
-  - selected provider profile and channel configuration
-
-`ohmo config` uses the same workflow language as `oh setup`, so you can point the personal-agent gateway at:
-
-- `Anthropic-Compatible API`
-- `Claude Subscription`
-- `OpenAI-Compatible API`
-- `Codex Subscription`
-- `GitHub Copilot`
-
-`ohmo init` creates the home workspace once. After that, use `ohmo config` to update provider and channel settings; if the gateway is already running, the config flow can restart it for you.
-
-Currently `ohmo init` / `ohmo config` can guide channel setup for:
-
-- Telegram
-- Slack
-- Discord
-- Feishu
 
 ---
 

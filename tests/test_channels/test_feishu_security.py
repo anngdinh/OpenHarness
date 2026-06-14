@@ -12,17 +12,15 @@ from openharness.channels.bus.queue import MessageBus
 from openharness.channels.bus.events import OutboundMessage
 from openharness.channels.impl.feishu import FeishuChannel, _extract_feishu_mentions, _feishu_mentions_bot
 from openharness.config.schema import FeishuConfig
-from ohmo.group_registry import save_managed_group_record
 
 
 @pytest.mark.asyncio
 async def test_feishu_inbound_file_attachment_cannot_escape_media_dir(tmp_path: Path, monkeypatch):
     """Remote Feishu filenames are metadata and must not be trusted as paths."""
-    workspace = tmp_path / "ohmo"
-    workspace.mkdir()
-    protected_file = workspace / "soul.md"
+    media_root = tmp_path / "media"
+    monkeypatch.setenv("OPENHARNESS_CHANNEL_MEDIA_DIR", str(media_root))
+    protected_file = tmp_path / "soul.md"
     protected_file.write_text("ORIGINAL", encoding="utf-8")
-    monkeypatch.setenv("OHMO_WORKSPACE", str(workspace))
 
     channel = FeishuChannel(
         FeishuConfig(allow_from=["user-open-id"], react_emoji="eyes"), MessageBus()
@@ -65,7 +63,7 @@ async def test_feishu_inbound_file_attachment_cannot_escape_media_dir(tmp_path: 
 
     await channel._on_message(SimpleNamespace(event=event))
 
-    media_dir = workspace / "attachments" / "feishu"
+    media_dir = media_root / "feishu"
     saved_paths = [Path(path).resolve() for path in forwarded["media"]]
     assert protected_file.read_text(encoding="utf-8") == "ORIGINAL"
     assert saved_paths == [(media_dir / "soul.md").resolve()]
@@ -129,28 +127,28 @@ def test_feishu_extracts_text_mentions_and_matches_bot_name():
             {
                 "key": "@_user_1",
                 "id": {"open_id": "ou_bot"},
-                "name": "ohmo",
+                "name": "openharness",
             }
         ],
     }
 
     assert _extract_feishu_mentions(content) == [
-        {"key": "@_user_1", "name": "ohmo", "open_id": "ou_bot", "user_id": "", "union_id": ""}
+        {"key": "@_user_1", "name": "openharness", "open_id": "ou_bot", "user_id": "", "union_id": ""}
     ]
-    assert _feishu_mentions_bot(content, content["text"], FeishuConfig(bot_names=["ohmo"])) is True
+    assert _feishu_mentions_bot(content, content["text"], FeishuConfig(bot_names=["openharness"])) is True
 
 
 def test_feishu_extracts_sdk_message_mentions():
     mention = SimpleNamespace(
         key="@_user_1",
         id=SimpleNamespace(open_id="ou_bot", user_id="user_bot", union_id=""),
-        name="ohmo",
+        name="openharness",
     )
 
     assert _extract_feishu_mentions({"text": "@_user_1 帮我看看"}, [mention]) == [
         {
             "key": "@_user_1",
-            "name": "ohmo",
+            "name": "openharness",
             "open_id": "ou_bot",
             "user_id": "user_bot",
             "union_id": "",
@@ -173,7 +171,7 @@ def test_feishu_mention_detection_can_use_bot_open_id():
     assert _feishu_mentions_bot(
         content,
         content["text"],
-        FeishuConfig(bot_open_id="ou_exact_bot", bot_names=["ohmo"]),
+        FeishuConfig(bot_open_id="ou_exact_bot", bot_names=["openharness"]),
     ) is True
 
 
@@ -189,23 +187,19 @@ def test_feishu_mention_detection_ignores_other_users():
         ],
     }
 
-    assert _feishu_mentions_bot(content, content["text"], FeishuConfig(bot_names=["ohmo"])) is False
+    assert _feishu_mentions_bot(content, content["text"], FeishuConfig(bot_names=["openharness"])) is False
 
 
 @pytest.mark.asyncio
 async def test_feishu_group_policy_ignores_unmentioned_unmanaged_group_without_reaction(
-    tmp_path: Path,
     monkeypatch,
 ):
-    workspace = tmp_path / "ohmo"
-    workspace.mkdir()
-    monkeypatch.setenv("OHMO_WORKSPACE", str(workspace))
     channel = FeishuChannel(
         FeishuConfig(
             allow_from=["user-open-id"],
             react_emoji="OK",
             group_policy="managed_or_mention",
-            bot_names=["ohmo"],
+            bot_names=["openharness"],
         ),
         MessageBus(),
     )
@@ -243,77 +237,15 @@ async def test_feishu_group_policy_ignores_unmentioned_unmanaged_group_without_r
 
 
 @pytest.mark.asyncio
-async def test_feishu_group_policy_allows_managed_group_without_mention(
-    tmp_path: Path,
-    monkeypatch,
-):
-    workspace = tmp_path / "ohmo"
-    workspace.mkdir()
-    monkeypatch.setenv("OHMO_WORKSPACE", str(workspace))
-    save_managed_group_record(
-        workspace=workspace,
-        channel="feishu",
-        chat_id="oc_managed",
-        owner_open_id="user-open-id",
-        name="Managed Group",
-    )
-    channel = FeishuChannel(
-        FeishuConfig(
-            allow_from=["user-open-id"],
-            react_emoji="OK",
-            group_policy="managed_or_mention",
-            bot_names=["ohmo"],
-        ),
-        MessageBus(),
-    )
-    reactions: list[str] = []
-    forwarded: list[dict] = []
-
-    async def fake_add_reaction(message_id: str, emoji_type: str = "OK") -> None:
-        reactions.append(f"{message_id}:{emoji_type}")
-
-    async def fake_handle_message(**kwargs):
-        forwarded.append(kwargs)
-
-    monkeypatch.setattr(channel, "_add_reaction", fake_add_reaction)
-    monkeypatch.setattr(channel, "_handle_message", fake_handle_message)
-    monkeypatch.setattr(channel, "_resolve_sender_display_name_sync", lambda sender_id: "Allowed User")
-
-    event = SimpleNamespace(
-        sender=SimpleNamespace(
-            sender_type="user",
-            sender_id=SimpleNamespace(open_id="user-open-id"),
-        ),
-        message=SimpleNamespace(
-            message_id="message-managed",
-            chat_id="oc_managed",
-            chat_type="group",
-            message_type="text",
-            content=json.dumps({"text": "managed 群不用 @ 也应该触发"}),
-        ),
-    )
-
-    await channel._on_message(SimpleNamespace(event=event))
-
-    assert reactions == ["message-managed:OK"]
-    assert len(forwarded) == 1
-    assert forwarded[0]["metadata"]["mentions_bot"] is False
-
-
-@pytest.mark.asyncio
 async def test_feishu_group_policy_allows_mentioned_unmanaged_group(
-    tmp_path: Path,
     monkeypatch,
 ):
-    workspace = tmp_path / "ohmo"
-    workspace.mkdir()
-    monkeypatch.setenv("OHMO_WORKSPACE", str(workspace))
     channel = FeishuChannel(
         FeishuConfig(
             allow_from=["user-open-id"],
             react_emoji="OK",
             group_policy="managed_or_mention",
-            bot_names=["ohmo"],
+            bot_names=["openharness"],
         ),
         MessageBus(),
     )
@@ -347,7 +279,7 @@ async def test_feishu_group_policy_allows_mentioned_unmanaged_group(
                         {
                             "key": "@_user_1",
                             "id": {"open_id": "ou_bot"},
-                            "name": "ohmo",
+                            "name": "openharness",
                         }
                     ],
                 },
@@ -365,18 +297,14 @@ async def test_feishu_group_policy_allows_mentioned_unmanaged_group(
 
 @pytest.mark.asyncio
 async def test_feishu_group_policy_allows_sdk_message_mention(
-    tmp_path: Path,
     monkeypatch,
 ):
-    workspace = tmp_path / "ohmo"
-    workspace.mkdir()
-    monkeypatch.setenv("OHMO_WORKSPACE", str(workspace))
     channel = FeishuChannel(
         FeishuConfig(
             allow_from=["user-open-id"],
             react_emoji="OK",
             group_policy="managed_or_mention",
-            bot_names=["ohmo"],
+            bot_names=["openharness"],
         ),
         MessageBus(),
     )
@@ -408,7 +336,7 @@ async def test_feishu_group_policy_allows_sdk_message_mention(
                 SimpleNamespace(
                     key="@_user_1",
                     id=SimpleNamespace(open_id="ou_bot", user_id="", union_id=""),
-                    name="ohmo",
+                    name="openharness",
                 )
             ],
         ),
