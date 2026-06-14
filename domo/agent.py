@@ -41,6 +41,8 @@ async def _agentbase_recall(context_id: str) -> str:
     """
     from openharness.config.settings import load_settings
 
+    if not context_id.strip():
+        return ""  # no caller identity -> no shared-bucket recall
     memory = load_settings().memory
     if memory.backend != "agentbase" or not memory.enabled:
         return ""

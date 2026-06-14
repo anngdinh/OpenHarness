@@ -1,7 +1,14 @@
 import pytest
 
-from domo.agent import _is_allowed_tool, make_build_engine
+from domo.agent import _agentbase_recall, _is_allowed_tool, make_build_engine
 from domo.config import DomoConfig
+
+
+@pytest.mark.asyncio
+async def test_agentbase_recall_skips_without_identity():
+    # No contextId -> no recall (must never read a shared "default" bucket).
+    assert await _agentbase_recall("") == ""
+    assert await _agentbase_recall("   ") == ""
 
 
 def test_is_allowed_tool():

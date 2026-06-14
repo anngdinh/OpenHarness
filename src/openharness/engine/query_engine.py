@@ -155,6 +155,15 @@ class QueryEngine:
     def _memory_session_id(self) -> str:
         return str(self._tool_metadata.get("session_id") or "default")
 
+    def _agentbase_actor(self) -> str:
+        """Caller identity for AgentBase memory; empty string means 'no identity'.
+
+        Unlike ``_memory_session_id`` this never falls back to a shared ``default``
+        bucket — without a real id we skip the remote memory entirely rather than
+        risk mixing unrelated callers' events/records.
+        """
+        return str(self._tool_metadata.get("session_id") or "").strip()
+
     async def _prepare_session_memory(self, query: str = "") -> None:
         """Expose session memory to compaction when enabled."""
 
@@ -168,6 +177,9 @@ class QueryEngine:
         path = prepare_session_memory_metadata(self._cwd, self._tool_metadata, session_id=session_id)
         if self._settings.memory.backend != "agentbase":
             return
+        actor = self._agentbase_actor()
+        if not actor:
+            return  # no caller identity -> skip remote memory (never use "default")
         # AgentBase: source continuity (recent events) + relevant facts and write
         # them to the session-memory file so compaction injects them like the file
         # backend. Best-effort — never let a remote failure break the turn.
@@ -176,8 +188,8 @@ class QueryEngine:
             from openharness.utils.fs import atomic_write_text
 
             cfg = self._settings.memory.agentbase
-            convo = await am.recent_conversation_text(cfg, session_id, session_id)
-            facts = await am.search_facts_text(cfg, session_id, query) if query.strip() else ""
+            convo = await am.recent_conversation_text(cfg, actor, actor)
+            facts = await am.search_facts_text(cfg, actor, query) if query.strip() else ""
             sections = []
             if facts:
                 sections.append("## Known facts about the user\n" + facts)
@@ -212,15 +224,17 @@ class QueryEngine:
         try:
             from openharness.services import agentbase_memory as am
 
+            actor = self._agentbase_actor()
+            if not actor:
+                return  # no caller identity -> don't write into a shared bucket
             cfg = self._settings.memory.agentbase
-            session_id = self._memory_session_id()
             written = int(self._tool_metadata.get("_agentbase_written") or 0)
             turns = [
                 (m.role, m.text)
                 for m in self._messages[written:]
                 if m.role in ("user", "assistant") and m.text.strip()
             ]
-            await am.write_turns(cfg, session_id, session_id, turns)
+            await am.write_turns(cfg, actor, actor, turns)
             self._tool_metadata["_agentbase_written"] = len(self._messages)
         except Exception as exc:
             self._tool_metadata["agentbase_memory_last_error"] = str(exc)
@@ -232,11 +246,13 @@ class QueryEngine:
             return
         if self._settings.memory.backend == "agentbase":
             # AgentBase distils durable facts (memory records) from the session.
+            actor = self._agentbase_actor()
+            if not actor:
+                return  # no caller identity -> nothing to distil into a shared bucket
             try:
                 from openharness.services import agentbase_memory as am
 
-                session_id = self._memory_session_id()
-                await am.generate_facts(self._settings.memory.agentbase, session_id, session_id)
+                await am.generate_facts(self._settings.memory.agentbase, actor, actor)
             except Exception as exc:
                 self._tool_metadata["agentbase_memory_last_error"] = str(exc)
             return
