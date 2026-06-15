@@ -31,7 +31,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra a2a
+        run: uv sync --extra dev --extra a2a --extra full
 
       - name: Run test suite
         run: uv run pytest -q
