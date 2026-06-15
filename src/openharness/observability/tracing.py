@@ -12,20 +12,46 @@ from typing import Any
 
 _initialized = False
 _tracer: Any = None
+_capture_content = False
 
 
-def init_tracing() -> None:
-    """Configure a global tracer provider from OTEL_* env vars (idempotent).
+def _env(name: str) -> str | None:
+    """Return a non-empty env var value, else None."""
+    value = os.environ.get(name)
+    if value is not None and value.strip() != "":
+        return value.strip()
+    return None
 
-    Off unless ``OTEL_TRACES_EXPORTER`` is ``console`` or ``otlp``. Silently
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in ("true", "1", "yes", "on")
+
+
+def init_tracing(config: Any = None) -> None:
+    """Configure a global tracer provider (idempotent).
+
+    Reads config from ``OTEL_*`` env vars, falling back to ``config`` (a
+    ``Settings.observability`` object with ``exporter`` / ``otlp_endpoint`` /
+    ``service_name`` / ``capture_content``). Env vars take precedence so
+    settings.json works standalone while env still overrides.
+
+    Off unless the resolved exporter is ``console`` or ``otlp``. Silently
     no-ops if the OpenTelemetry SDK (or OTLP exporter) is not installed.
     """
-    global _initialized, _tracer
+    global _initialized, _tracer, _capture_content
     if _initialized:
         return
     _initialized = True
 
-    exporter_name = os.environ.get("OTEL_TRACES_EXPORTER", "none").strip().lower()
+    def cfg(attr: str, default: Any) -> Any:
+        return getattr(config, attr, default) if config is not None else default
+
+    # Content capture: env wins over settings.
+    env_capture = _env("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT")
+    _capture_content = _is_truthy(env_capture) if env_capture is not None else bool(cfg("capture_content", False))
+
+    # Exporter selection: env wins over settings.
+    exporter_name = (_env("OTEL_TRACES_EXPORTER") or str(cfg("exporter", "none"))).strip().lower()
     if exporter_name in ("", "none"):
         return
 
@@ -40,7 +66,8 @@ def init_tracing() -> None:
     if exporter_name == "console":
         exporter: Any = ConsoleSpanExporter()
     elif exporter_name == "otlp":
-        exporter = _build_otlp_exporter()
+        endpoint = _env("OTEL_EXPORTER_OTLP_ENDPOINT") or cfg("otlp_endpoint", None)
+        exporter = _build_otlp_exporter(endpoint)
         if exporter is None:
             return
     else:
@@ -53,25 +80,21 @@ def init_tracing() -> None:
     except importlib.metadata.PackageNotFoundError:
         version = "unknown"
 
-    resource = Resource.create(
-        {
-            "service.name": os.environ.get("OTEL_SERVICE_NAME", "openharness"),
-            "service.version": version,
-        }
-    )
+    service_name = _env("OTEL_SERVICE_NAME") or str(cfg("service_name", "openharness")) or "openharness"
+    resource = Resource.create({"service.name": service_name, "service.version": version})
     provider = TracerProvider(resource=resource)
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     _tracer = provider.get_tracer("openharness")
 
 
-def _build_otlp_exporter() -> Any:
+def _build_otlp_exporter(endpoint: str | None = None) -> Any:
     try:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
             OTLPSpanExporter as HttpExporter,
         )
 
-        return HttpExporter()
+        return HttpExporter(endpoint=endpoint) if endpoint else HttpExporter()
     except ImportError:
         pass
     try:
@@ -79,9 +102,17 @@ def _build_otlp_exporter() -> Any:
             OTLPSpanExporter as GrpcExporter,
         )
 
-        return GrpcExporter()
+        return GrpcExporter(endpoint=endpoint) if endpoint else GrpcExporter()
     except ImportError:
         return None
+
+
+def capture_content_enabled() -> bool:
+    """Whether prompt / tool payloads may be attached to spans (env wins)."""
+    env_capture = _env("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT")
+    if env_capture is not None:
+        return _is_truthy(env_capture)
+    return _capture_content
 
 
 def get_tracer() -> Any:
@@ -103,6 +134,7 @@ def use_tracer_provider(provider: Any) -> None:
 
 def reset_tracing() -> None:
     """Test hook: disable tracing again."""
-    global _initialized, _tracer
+    global _initialized, _tracer, _capture_content
     _initialized = False
     _tracer = None
+    _capture_content = False

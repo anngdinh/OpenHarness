@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from openharness.observability.spans import (
-    capture_content_enabled,
     model_call_span,
     tool_span,
     turn_span,
     user_input_span,
 )
 from openharness.observability.tracing import (
+    capture_content_enabled,
     get_tracer,
     init_tracing,
     is_enabled,

@@ -502,12 +502,30 @@ flowchart LR
 
 ### Observability (OpenTelemetry)
 
-The agent loop is instrumented with OpenTelemetry. Tracing is **off by default**;
-enable it with the standard `OTEL_*` environment variables and the optional extra:
+The agent loop is instrumented with OpenTelemetry. Tracing is **off by default**.
+Install the optional extra and enable it via either `settings.json` or the
+standard `OTEL_*` environment variables (env vars take precedence when set):
 
 ```bash
 pip install 'openharness-ai[observability]'
+```
 
+**Via `settings.json`** (`~/.openharness/settings.json`):
+
+```jsonc
+{
+  "observability": {
+    "exporter": "console",                       // "none" (default) | "console" | "otlp"
+    "otlp_endpoint": "http://localhost:4318",    // for the "otlp" exporter
+    "service_name": "openharness",
+    "capture_content": false                     // attach prompt / tool I/O payloads
+  }
+}
+```
+
+**Via environment variables** (override `settings.json`):
+
+```bash
 # Print spans to the console:
 OTEL_TRACES_EXPORTER=console oh
 
@@ -517,8 +535,8 @@ OTEL_TRACES_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 oh
 
 Each user input produces one trace: `user_input → turn → {chat, execute_tool}`,
 with token usage, finish reasons, tool names, errors, and timings. Prompt and
-tool-I/O payloads are attached only when
-`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`.
+tool-I/O payloads are attached only when `capture_content` is enabled (or
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`).
 
 ---
 

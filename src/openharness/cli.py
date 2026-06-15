@@ -2384,8 +2384,9 @@ def main(
         logging.basicConfig(level=lvl, format="%(asctime)s [%(name)s] %(levelname)s %(message)s", stream=sys.stderr)
 
     from openharness import observability as obs
+    from openharness.config.settings import load_settings
 
-    obs.init_tracing()
+    obs.init_tracing(load_settings().observability)
 
     if dangerously_skip_permissions:
         permission_mode = "full_auto"

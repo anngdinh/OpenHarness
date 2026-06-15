@@ -79,7 +79,24 @@ context** (`trace.set_span_in_context(parent)`) rather than ambient current-span
 This guarantees a correct tree even with concurrent tools and generator
 suspension — and is verified by tests.
 
-## Config / env (standard OTel vars)
+## Config
+
+Configurable two ways, with **env vars taking precedence over `settings.json`**
+(so settings.json works standalone while env still overrides per-run). The
+`Settings.observability` section mirrors the env vars:
+
+```jsonc
+"observability": {
+  "exporter": "none",            // "none" (default) | "console" | "otlp"
+  "otlp_endpoint": null,
+  "service_name": "openharness",
+  "capture_content": false
+}
+```
+
+`init_tracing()` is called at CLI startup with `load_settings().observability`.
+
+### Standard OTel env vars
 
 - `OTEL_TRACES_EXPORTER` = `none` (default) | `console` | `otlp` — **off unless set**
 - `OTEL_EXPORTER_OTLP_ENDPOINT` — for `otlp` (Jaeger/Tempo/collector)

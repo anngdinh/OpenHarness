@@ -124,6 +124,20 @@ class SandboxSettings(BaseModel):
     docker: DockerSandboxSettings = Field(default_factory=DockerSandboxSettings)
 
 
+class ObservabilitySettings(BaseModel):
+    """OpenTelemetry tracing config (alternative to OTEL_* env vars).
+
+    When the matching ``OTEL_*`` env var is set it takes precedence over the
+    value here, so settings.json works standalone while env still overrides.
+    """
+
+    # Span exporter: "none" (default, disabled), "console", or "otlp".
+    exporter: str = "none"
+    otlp_endpoint: str | None = None
+    service_name: str = "openharness"
+    capture_content: bool = False
+
+
 class WebSettings(BaseModel):
     """Outbound web tool configuration."""
 
@@ -598,6 +612,7 @@ class Settings(BaseModel):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
     web: WebSettings = Field(default_factory=WebSettings)
+    observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
     enabled_plugins: dict[str, bool] = Field(default_factory=dict)
     allow_project_plugins: bool = False
     allow_project_skills: bool = True

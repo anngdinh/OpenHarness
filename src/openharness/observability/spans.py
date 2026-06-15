@@ -14,23 +14,16 @@ from __future__ import annotations
 
 import contextvars
 import json
-import os
 from contextlib import AbstractContextManager, contextmanager
 from typing import Any, Iterator
 
-from openharness.observability.tracing import get_tracer
+from openharness.observability.tracing import capture_content_enabled, get_tracer
 
 _current_span: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "openharness_current_span", default=None
 )
 
 _CONTENT_LIMIT = 8192
-
-
-def capture_content_enabled() -> bool:
-    """Whether prompt / tool payloads may be attached to spans."""
-    val = os.environ.get("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "")
-    return val.strip().lower() in ("true", "1", "yes", "on")
 
 
 class _Span:
