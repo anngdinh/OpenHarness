@@ -106,13 +106,17 @@ def _span(name: str, attrs: dict[str, Any] | None = None) -> Iterator[_Span]:
     try:
         yield _Span(span)
     except BaseException as exc:
-        try:
-            from opentelemetry.trace import Status, StatusCode
+        # Mark ERROR only for real failures. Cancellation / generator-close
+        # (CancelledError, GeneratorExit, KeyboardInterrupt — BaseException but
+        # not Exception) are normal control flow: end the span without ERROR.
+        if isinstance(exc, Exception):
+            try:
+                from opentelemetry.trace import Status, StatusCode
 
-            span.record_exception(exc)
-            span.set_status(Status(StatusCode.ERROR, str(exc)))
-        except Exception:
-            pass
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+            except Exception:
+                pass
         raise
     finally:
         _current_span.reset(token)

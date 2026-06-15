@@ -169,6 +169,20 @@ def test_error_status_recorded(exporter):
     assert span.status.status_code == StatusCode.ERROR
 
 
+def test_cancellation_not_marked_error(exporter):
+    import asyncio
+
+    from opentelemetry.trace import StatusCode
+
+    # Cancellation / generator-close are not failures — the span must still end
+    # (be exported) but must NOT be marked ERROR.
+    with pytest.raises(asyncio.CancelledError):
+        with spans.model_call_span("m"):
+            raise asyncio.CancelledError()
+    span = _by_name(exporter.get_finished_spans())["chat m"]
+    assert span.status.status_code != StatusCode.ERROR
+
+
 def test_noop_when_disabled():
     tracing.reset_tracing()
     # No provider installed -> helpers run without error and create no spans.

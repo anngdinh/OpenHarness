@@ -186,6 +186,69 @@ async def test_engine_chat_span_captures_tool_definitions(exporter, tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_content_capture_failure_does_not_break_turn(exporter, tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_COORDINATOR_MODE", raising=False)
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+    import openharness.engine.query as query_mod
+    from openharness.engine.stream_events import AssistantTurnComplete
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("render failed")
+
+    monkeypatch.setattr(query_mod, "_render_request", _boom)
+
+    engine = QueryEngine(
+        api_client=_FakeApiClient(
+            [
+                (
+                    ConversationMessage(role="assistant", content=[TextBlock(text="ok")]),
+                    UsageSnapshot(input_tokens=1, output_tokens=1),
+                )
+            ]
+        ),
+        tool_registry=ToolRegistry(),
+        permission_checker=PermissionChecker(PermissionSettings(mode=PermissionMode.FULL_AUTO)),
+        cwd=tmp_path,
+        model="claude-test",
+        system_prompt="system",
+        tool_metadata={"session_id": "s"},
+    )
+
+    events = [event async for event in engine.submit_message("hi")]
+    # Telemetry failure must not break the turn.
+    assert any(isinstance(e, AssistantTurnComplete) for e in events)
+
+
+@pytest.mark.asyncio
+async def test_engine_chat_span_system_prefers_provider(exporter, tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_COORDINATOR_MODE", raising=False)
+    from openharness.config.settings import Settings
+
+    engine = QueryEngine(
+        api_client=_FakeApiClient(
+            [
+                (
+                    ConversationMessage(role="assistant", content=[TextBlock(text="hi")]),
+                    UsageSnapshot(input_tokens=1, output_tokens=1),
+                )
+            ]
+        ),
+        tool_registry=ToolRegistry(),
+        permission_checker=PermissionChecker(PermissionSettings(mode=PermissionMode.FULL_AUTO)),
+        cwd=tmp_path,
+        model="m",
+        system_prompt="system",
+        tool_metadata={"session_id": "s"},
+        settings=Settings(provider="gemini", api_format="openai"),
+    )
+
+    _ = [event async for event in engine.submit_message("hi")]
+
+    by_name = _spans_by_name(exporter)
+    assert by_name["chat m"][0].attributes["gen_ai.system"] == "gemini"
+
+
+@pytest.mark.asyncio
 async def test_engine_chat_span_system_from_api_format(exporter, tmp_path: Path, monkeypatch):
     monkeypatch.delenv("CLAUDE_CODE_COORDINATOR_MODE", raising=False)
     from openharness.config.settings import Settings

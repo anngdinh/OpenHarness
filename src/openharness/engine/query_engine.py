@@ -154,9 +154,18 @@ class QueryEngine:
         )
 
     def _gen_ai_system(self) -> str:
-        """OTel ``gen_ai.system`` value, derived from the active provider's API format."""
-        api_format = getattr(self._settings, "api_format", None) if self._settings else None
-        return str(api_format or "openai")
+        """OTel ``gen_ai.system`` value, derived from the active provider.
+
+        Prefer the concrete provider (e.g. ``gemini``, ``moonshot``) so distinct
+        OpenAI-compatible backends are distinguishable; fall back to the wire
+        ``api_format`` and finally ``openai``.
+        """
+        settings = self._settings
+        if settings is not None:
+            provider = getattr(settings, "provider", "") or getattr(settings, "api_format", "")
+            if provider:
+                return str(provider)
+        return "openai"
 
     def _memory_session_id(self) -> str:
         return str(self._tool_metadata.get("session_id") or "default")
