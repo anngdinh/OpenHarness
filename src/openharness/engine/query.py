@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -26,6 +27,7 @@ from openharness.engine.messages import (
     ImageBlock,
     TextBlock,
     ToolResultBlock,
+    ToolUseBlock,
 )
 from openharness.engine.stream_events import (
     AssistantTextDelta,
@@ -631,6 +633,35 @@ async def _preprocess_images_in_messages(
         msg.content[blk_idx] = TextBlock(text=description)
 
 
+def _render_request(system_prompt: str, messages: list[ConversationMessage]) -> str:
+    """Render the model request (system prompt + messages) to readable text.
+
+    Used only for content-capture tracing, so the ``chat`` span carries the exact
+    input that produced its ``gen_ai.completion``.
+    """
+    parts: list[str] = []
+    if system_prompt:
+        parts.append(f"[system]\n{system_prompt}")
+    for msg in messages:
+        chunks: list[str] = []
+        for block in msg.content:
+            if isinstance(block, TextBlock):
+                if block.text:
+                    chunks.append(block.text)
+            elif isinstance(block, ToolUseBlock):
+                chunks.append(
+                    f"[tool_use {block.name} id={block.id}] {json.dumps(block.input, default=str)}"
+                )
+            elif isinstance(block, ToolResultBlock):
+                chunks.append(
+                    f"[tool_result id={block.tool_use_id} error={block.is_error}]\n{block.content}"
+                )
+            elif isinstance(block, ImageBlock):
+                chunks.append("[image]")
+        parts.append(f"[{msg.role}]\n" + "\n".join(chunks))
+    return "\n\n".join(parts)
+
+
 async def run_query(
     context: QueryContext,
     messages: list[ConversationMessage],
@@ -728,6 +759,8 @@ async def run_query(
             stop_reason: str | None = None
 
             with obs.model_call_span(context.model) as model_span:
+                if obs.capture_content_enabled():
+                    model_span.record_prompt(_render_request(context.system_prompt, messages))
                 try:
                     async for event in context.api_client.stream_message(
                         ApiMessageRequest(

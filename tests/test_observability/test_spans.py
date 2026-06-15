@@ -105,6 +105,16 @@ def test_capture_prompt_and_completion(exporter, monkeypatch):
     assert names["chat m"].attributes["gen_ai.completion"] == "the answer is 42"
 
 
+def test_chat_span_captures_request_prompt(exporter, monkeypatch):
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+    with spans.user_input_span(session_id="s", conversation_id="s", model="m", entrypoint="cli"):
+        with spans.model_call_span("m") as chat:
+            chat.record_prompt("[system]\nyou are x\n\n[user]\nhello there")
+    attrs = _by_name(exporter.get_finished_spans())["chat m"].attributes
+    assert "you are x" in attrs["gen_ai.prompt"]
+    assert "hello there" in attrs["gen_ai.prompt"]
+
+
 def test_capture_has_no_size_cap(exporter, monkeypatch):
     monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
     big = "x" * 50000

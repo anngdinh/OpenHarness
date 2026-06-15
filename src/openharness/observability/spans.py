@@ -59,6 +59,10 @@ class _Span:
         if capture_content_enabled():
             self.set("openharness.tool.output", _clip(output or ""))
 
+    def record_prompt(self, text: str) -> None:
+        if text and capture_content_enabled():
+            self.set("gen_ai.prompt", _clip(text))
+
     def record_completion(self, text: str) -> None:
         if text and capture_content_enabled():
             self.set("gen_ai.completion", _clip(text))

@@ -148,7 +148,11 @@ async def test_engine_captures_prompt_and_completion(exporter, tmp_path: Path, m
 
     by_name = _spans_by_name(exporter)
     assert by_name["user_input"][0].attributes["gen_ai.prompt"] == "my question"
-    assert by_name["chat claude-test"][0].attributes["gen_ai.completion"] == "the reply"
+    chat_attrs = by_name["chat claude-test"][0].attributes
+    assert chat_attrs["gen_ai.completion"] == "the reply"
+    # The chat span also carries the model input (system prompt + messages).
+    assert "my question" in chat_attrs["gen_ai.prompt"]
+    assert "system" in chat_attrs["gen_ai.prompt"]
 
 
 @pytest.mark.asyncio
