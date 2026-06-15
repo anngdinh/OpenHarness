@@ -156,6 +156,7 @@ class QueryContext:
     max_turns: int | None = 200
     hook_executor: HookExecutor | None = None
     tool_metadata: dict[str, object] | None = None
+    gen_ai_system: str = "openai"
 
 
 def _append_capped_unique(bucket: list[Any], value: Any, *, limit: int) -> None:
@@ -758,7 +759,7 @@ async def run_query(
             usage = UsageSnapshot()
             stop_reason: str | None = None
 
-            with obs.model_call_span(context.model) as model_span:
+            with obs.model_call_span(context.model, context.gen_ai_system) as model_span:
                 if obs.capture_content_enabled():
                     model_span.record_prompt(_render_request(context.system_prompt, messages))
                 try:

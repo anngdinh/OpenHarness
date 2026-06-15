@@ -153,6 +153,11 @@ class QueryEngine:
             **kwargs,
         )
 
+    def _gen_ai_system(self) -> str:
+        """OTel ``gen_ai.system`` value, derived from the active provider's API format."""
+        api_format = getattr(self._settings, "api_format", None) if self._settings else None
+        return str(api_format or "openai")
+
     def _memory_session_id(self) -> str:
         return str(self._tool_metadata.get("session_id") or "default")
 
@@ -329,6 +334,7 @@ class QueryEngine:
             ask_user_prompt=self._ask_user_prompt,
             hook_executor=self._hook_executor,
             tool_metadata=self._tool_metadata,
+            gen_ai_system=self._gen_ai_system(),
         )
         query_messages = list(self._messages)
         coordinator_context = self._build_coordinator_context_message()
@@ -377,6 +383,7 @@ class QueryEngine:
             ask_user_prompt=self._ask_user_prompt,
             hook_executor=self._hook_executor,
             tool_metadata=self._tool_metadata,
+            gen_ai_system=self._gen_ai_system(),
         )
         with obs.user_input_span(
             session_id=str(self._tool_metadata.get("session_id") or ""),
