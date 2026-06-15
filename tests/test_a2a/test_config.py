@@ -1,4 +1,3 @@
-import os
 from openharness.a2a.config import A2AServerSettings
 
 
