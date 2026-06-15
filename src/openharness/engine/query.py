@@ -788,6 +788,8 @@ async def run_query(
                     return
                 else:
                     model_span.record_usage(usage, stop_reason)
+                    if final_message is not None:
+                        model_span.record_completion(final_message.text)
 
             if final_message is None:
                 raise RuntimeError("Model stream finished without a final message")

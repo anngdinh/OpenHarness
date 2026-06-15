@@ -23,7 +23,14 @@ _current_span: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "openharness_current_span", default=None
 )
 
-_CONTENT_LIMIT = 8192
+# Max chars per captured content field; None = no cap (capture full content).
+_CONTENT_LIMIT: int | None = None
+
+
+def _clip(text: str) -> str:
+    if _CONTENT_LIMIT is None:
+        return text
+    return text[:_CONTENT_LIMIT]
 
 
 class _Span:
@@ -50,7 +57,11 @@ class _Span:
         self.set("openharness.tool.is_error", is_error)
         self.set("openharness.tool.output.length", len(output or ""))
         if capture_content_enabled():
-            self.set("openharness.tool.output", (output or "")[:_CONTENT_LIMIT])
+            self.set("openharness.tool.output", _clip(output or ""))
+
+    def record_completion(self, text: str) -> None:
+        if text and capture_content_enabled():
+            self.set("gen_ai.completion", _clip(text))
 
     def record_error(self, exc: BaseException) -> None:
         if self._span is None:
@@ -103,18 +114,20 @@ def _span(name: str, attrs: dict[str, Any] | None = None) -> Iterator[_Span]:
             pass
 
 
+@contextmanager
 def user_input_span(
-    *, session_id: str, conversation_id: str, model: str, entrypoint: str
-) -> AbstractContextManager[_Span]:
-    return _span(
-        "user_input",
-        {
-            "openharness.session.id": session_id or None,
-            "openharness.conversation.id": conversation_id or None,
-            "gen_ai.request.model": model,
-            "openharness.entrypoint": entrypoint,
-        },
-    )
+    *, session_id: str, conversation_id: str, model: str, entrypoint: str, prompt: str = ""
+) -> Iterator[_Span]:
+    attrs = {
+        "openharness.session.id": session_id or None,
+        "openharness.conversation.id": conversation_id or None,
+        "gen_ai.request.model": model,
+        "openharness.entrypoint": entrypoint,
+    }
+    with _span("user_input", attrs) as handle:
+        if prompt and capture_content_enabled():
+            handle.set("gen_ai.prompt", _clip(prompt))
+        yield handle
 
 
 def turn_span(index: int) -> AbstractContextManager[_Span]:
@@ -142,10 +155,7 @@ def tool_span(*, tool_name: str, tool_call_id: str, tool_input: dict[str, Any]) 
     with _span(f"execute_tool {tool_name}", attrs) as handle:
         if capture_content_enabled():
             try:
-                handle.set(
-                    "openharness.tool.input",
-                    json.dumps(tool_input, default=str)[:_CONTENT_LIMIT],
-                )
+                handle.set("openharness.tool.input", _clip(json.dumps(tool_input, default=str)))
             except Exception:
                 pass
         yield handle

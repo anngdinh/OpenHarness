@@ -344,6 +344,7 @@ class QueryEngine:
                 ),
                 model=self._model,
                 entrypoint=str(self._tool_metadata.get("entrypoint") or "cli"),
+                prompt=user_message.text,
             ):
                 async for event, usage in run_query(context, query_messages):
                     if isinstance(event, AssistantTurnComplete):

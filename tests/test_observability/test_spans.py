@@ -91,6 +91,41 @@ def test_content_gate_on_captures_payload(exporter, monkeypatch):
     assert tool_attrs["openharness.tool.output"] == "hi"
 
 
+def test_capture_prompt_and_completion(exporter, monkeypatch):
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+    with spans.user_input_span(
+        session_id="s", conversation_id="s", model="m", entrypoint="cli", prompt="hello world"
+    ):
+        with spans.model_call_span("m") as chat:
+            chat.record_usage(UsageSnapshot(input_tokens=1, output_tokens=1), stop_reason="end_turn")
+            chat.record_completion("the answer is 42")
+
+    names = _by_name(exporter.get_finished_spans())
+    assert names["user_input"].attributes["gen_ai.prompt"] == "hello world"
+    assert names["chat m"].attributes["gen_ai.completion"] == "the answer is 42"
+
+
+def test_capture_has_no_size_cap(exporter, monkeypatch):
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+    big = "x" * 50000
+    with spans.tool_span(tool_name="bash", tool_call_id="t", tool_input={"command": big}) as tool:
+        tool.record_tool_result(big, is_error=False)
+
+    attrs = _by_name(exporter.get_finished_spans())["execute_tool bash"].attributes
+    assert len(attrs["openharness.tool.output"]) == 50000
+    assert big in attrs["openharness.tool.input"]
+
+
+def test_prompt_not_captured_when_gate_off(exporter, monkeypatch):
+    monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
+    with spans.user_input_span(
+        session_id="s", conversation_id="s", model="m", entrypoint="cli", prompt="secret prompt"
+    ):
+        pass
+    attrs = _by_name(exporter.get_finished_spans())["user_input"].attributes
+    assert "gen_ai.prompt" not in attrs
+
+
 def test_error_status_recorded(exporter):
     from opentelemetry.trace import StatusCode
 

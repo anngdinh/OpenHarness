@@ -124,6 +124,34 @@ async def test_engine_emits_full_trace_tree(exporter, tmp_path: Path, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_engine_captures_prompt_and_completion(exporter, tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_COORDINATOR_MODE", raising=False)
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+    engine = QueryEngine(
+        api_client=_FakeApiClient(
+            [
+                (
+                    ConversationMessage(role="assistant", content=[TextBlock(text="the reply")]),
+                    UsageSnapshot(input_tokens=1, output_tokens=1),
+                )
+            ]
+        ),
+        tool_registry=ToolRegistry(),
+        permission_checker=PermissionChecker(PermissionSettings(mode=PermissionMode.FULL_AUTO)),
+        cwd=tmp_path,
+        model="claude-test",
+        system_prompt="system",
+        tool_metadata={"session_id": "sess-c"},
+    )
+
+    _ = [event async for event in engine.submit_message("my question")]
+
+    by_name = _spans_by_name(exporter)
+    assert by_name["user_input"][0].attributes["gen_ai.prompt"] == "my question"
+    assert by_name["chat claude-test"][0].attributes["gen_ai.completion"] == "the reply"
+
+
+@pytest.mark.asyncio
 async def test_engine_records_error_on_api_failure(exporter, tmp_path: Path, monkeypatch):
     monkeypatch.delenv("CLAUDE_CODE_COORDINATOR_MODE", raising=False)
     engine = QueryEngine(

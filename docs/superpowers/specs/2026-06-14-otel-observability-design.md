@@ -103,9 +103,11 @@ Configurable two ways, with **env vars taking precedence over `settings.json`**
 - `OTEL_EXPORTER_OTLP_ENDPOINT` — for `otlp` (Jaeger/Tempo/collector)
 - `OTEL_SERVICE_NAME` — defaults to `openharness`
 - `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` = `true` — the **payload
-  gate**; when on, prompt text + tool input/output are attached to spans. Off by
-  default. The gate is enforced in one place (`spans.py`): call sites always pass
-  payloads and the helper decides whether to attach them.
+  gate**; when on, the user prompt (`gen_ai.prompt` on `user_input`), the
+  assistant reply (`gen_ai.completion` on `chat`), and tool input/output are
+  attached to spans **untruncated**. Off by default. The gate is enforced in one
+  place (`spans.py`): call sites always pass payloads and the helper decides
+  whether to attach them.
 
 ## Dependency strategy (zero impact by default)
 
