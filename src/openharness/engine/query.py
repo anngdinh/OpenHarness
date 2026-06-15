@@ -759,9 +759,11 @@ async def run_query(
             usage = UsageSnapshot()
             stop_reason: str | None = None
 
+            tools_schema = context.tool_registry.to_api_schema()
             with obs.model_call_span(context.model, context.gen_ai_system) as model_span:
                 if obs.capture_content_enabled():
                     model_span.record_prompt(_render_request(context.system_prompt, messages))
+                    model_span.record_request_tools(json.dumps(tools_schema, default=str))
                 try:
                     async for event in context.api_client.stream_message(
                         ApiMessageRequest(
@@ -769,7 +771,7 @@ async def run_query(
                             messages=messages,
                             system_prompt=context.system_prompt,
                             max_tokens=effective_max_tokens,
-                            tools=context.tool_registry.to_api_schema(),
+                            tools=tools_schema,
                             effort=context.effort,
                         )
                     ):

@@ -156,6 +156,36 @@ async def test_engine_captures_prompt_and_completion(exporter, tmp_path: Path, m
 
 
 @pytest.mark.asyncio
+async def test_engine_chat_span_captures_tool_definitions(exporter, tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_COORDINATOR_MODE", raising=False)
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+    registry = ToolRegistry()
+    registry.register(_OkTool())
+    engine = QueryEngine(
+        api_client=_FakeApiClient(
+            [
+                (
+                    ConversationMessage(role="assistant", content=[TextBlock(text="hi")]),
+                    UsageSnapshot(input_tokens=1, output_tokens=1),
+                )
+            ]
+        ),
+        tool_registry=registry,
+        permission_checker=PermissionChecker(PermissionSettings(mode=PermissionMode.FULL_AUTO)),
+        cwd=tmp_path,
+        model="claude-test",
+        system_prompt="system",
+        tool_metadata={"session_id": "s"},
+    )
+
+    _ = [event async for event in engine.submit_message("hi")]
+
+    by_name = _spans_by_name(exporter)
+    tools_attr = by_name["chat claude-test"][0].attributes["gen_ai.request.tools"]
+    assert "ok_tool" in tools_attr
+
+
+@pytest.mark.asyncio
 async def test_engine_chat_span_system_from_api_format(exporter, tmp_path: Path, monkeypatch):
     monkeypatch.delenv("CLAUDE_CODE_COORDINATOR_MODE", raising=False)
     from openharness.config.settings import Settings

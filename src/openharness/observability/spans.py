@@ -63,6 +63,10 @@ class _Span:
         if text and capture_content_enabled():
             self.set("gen_ai.prompt", _clip(text))
 
+    def record_request_tools(self, tools_json: str) -> None:
+        if tools_json and capture_content_enabled():
+            self.set("gen_ai.request.tools", _clip(tools_json))
+
     def record_completion(self, text: str) -> None:
         if text and capture_content_enabled():
             self.set("gen_ai.completion", _clip(text))

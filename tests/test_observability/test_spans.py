@@ -112,6 +112,22 @@ def test_chat_span_records_system_provider(exporter):
     assert attrs["gen_ai.system"] == "openai"
 
 
+def test_chat_span_captures_tool_definitions(exporter, monkeypatch):
+    monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
+    with spans.model_call_span("m") as chat:
+        chat.record_request_tools('[{"name": "bash", "description": "run a command"}]')
+    attrs = _by_name(exporter.get_finished_spans())["chat m"].attributes
+    assert "bash" in attrs["gen_ai.request.tools"]
+
+
+def test_tool_definitions_not_captured_when_gate_off(exporter, monkeypatch):
+    monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
+    with spans.model_call_span("m") as chat:
+        chat.record_request_tools('[{"name": "bash"}]')
+    attrs = _by_name(exporter.get_finished_spans())["chat m"].attributes
+    assert "gen_ai.request.tools" not in attrs
+
+
 def test_chat_span_captures_request_prompt(exporter, monkeypatch):
     monkeypatch.setenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "true")
     with spans.user_input_span(session_id="s", conversation_id="s", model="m", entrypoint="cli"):

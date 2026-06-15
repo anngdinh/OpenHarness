@@ -545,7 +545,7 @@ the full payloads are attached too — untruncated:
 | Span | Attribute |
 |------|-----------|
 | `user_input` | `gen_ai.prompt` — the user's prompt |
-| `chat` | `gen_ai.completion` — the assistant's reply |
+| `chat` | `gen_ai.prompt` — the model request (system + messages); `gen_ai.request.tools` — the tool/function definitions sent; `gen_ai.completion` — the assistant's reply |
 | `execute_tool` | `openharness.tool.input` / `openharness.tool.output` |
 
 ⚠️ Content is captured **untruncated**, so large tool outputs or prompts can bloat
