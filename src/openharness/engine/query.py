@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -26,6 +27,7 @@ from openharness.engine.messages import (
     ImageBlock,
     TextBlock,
     ToolResultBlock,
+    ToolUseBlock,
 )
 from openharness.engine.stream_events import (
     AssistantTextDelta,
@@ -39,6 +41,7 @@ from openharness.engine.stream_events import (
 )
 from openharness.hooks import HookEvent, HookExecutor
 from openharness.permissions.checker import PermissionChecker
+from openharness import observability as obs
 from openharness.services.tool_outputs import tool_output_inline_chars, tool_output_preview_chars
 from openharness.tools.base import ToolExecutionContext
 from openharness.tools.base import ToolRegistry
@@ -153,6 +156,7 @@ class QueryContext:
     max_turns: int | None = 200
     hook_executor: HookExecutor | None = None
     tool_metadata: dict[str, object] | None = None
+    gen_ai_system: str = "openai"
 
 
 def _append_capped_unique(bucket: list[Any], value: Any, *, limit: int) -> None:
@@ -630,6 +634,35 @@ async def _preprocess_images_in_messages(
         msg.content[blk_idx] = TextBlock(text=description)
 
 
+def _render_request(system_prompt: str, messages: list[ConversationMessage]) -> str:
+    """Render the model request (system prompt + messages) to readable text.
+
+    Used only for content-capture tracing, so the ``chat`` span carries the exact
+    input that produced its ``gen_ai.completion``.
+    """
+    parts: list[str] = []
+    if system_prompt:
+        parts.append(f"[system]\n{system_prompt}")
+    for msg in messages:
+        chunks: list[str] = []
+        for block in msg.content:
+            if isinstance(block, TextBlock):
+                if block.text:
+                    chunks.append(block.text)
+            elif isinstance(block, ToolUseBlock):
+                chunks.append(
+                    f"[tool_use {block.name} id={block.id}] {json.dumps(block.input, default=str)}"
+                )
+            elif isinstance(block, ToolResultBlock):
+                chunks.append(
+                    f"[tool_result id={block.tool_use_id} error={block.is_error}]\n{block.content}"
+                )
+            elif isinstance(block, ImageBlock):
+                chunks.append("[image]")
+        parts.append(f"[{msg.role}]\n" + "\n".join(chunks))
+    return "\n\n".join(parts)
+
+
 async def run_query(
     context: QueryContext,
     messages: list[ConversationMessage],
@@ -721,163 +754,186 @@ async def run_query(
             yield event, None
         # -----------------------------------------------------------------------------
 
-        final_message: ConversationMessage | None = None
-        usage = UsageSnapshot()
+        with obs.turn_span(turn_count):
+            final_message: ConversationMessage | None = None
+            usage = UsageSnapshot()
+            stop_reason: str | None = None
 
-        try:
-            async for event in context.api_client.stream_message(
-                ApiMessageRequest(
-                    model=context.model,
-                    messages=messages,
-                    system_prompt=context.system_prompt,
-                    max_tokens=effective_max_tokens,
-                    tools=context.tool_registry.to_api_schema(),
-                    effort=context.effort,
-                )
-            ):
-                if isinstance(event, ApiTextDeltaEvent):
-                    yield AssistantTextDelta(text=event.text), None
-                    continue
-                if isinstance(event, ApiRetryEvent):
-                    yield StatusEvent(
-                        message=(
-                            f"Request failed; retrying in {event.delay_seconds:.1f}s "
-                            f"(attempt {event.attempt + 1} of {event.max_attempts}): {event.message}"
+            tools_schema = context.tool_registry.to_api_schema()
+            with obs.model_call_span(context.model, context.gen_ai_system) as model_span:
+                if obs.capture_content_enabled():
+                    # Telemetry must never break a turn: rendering/serialization
+                    # runs before the request, so guard it.
+                    try:
+                        model_span.record_prompt(_render_request(context.system_prompt, messages))
+                        model_span.record_request_tools(json.dumps(tools_schema, default=str))
+                    except Exception:
+                        pass
+                try:
+                    async for event in context.api_client.stream_message(
+                        ApiMessageRequest(
+                            model=context.model,
+                            messages=messages,
+                            system_prompt=context.system_prompt,
+                            max_tokens=effective_max_tokens,
+                            tools=tools_schema,
+                            effort=context.effort,
                         )
-                    ), None
-                    continue
+                    ):
+                        if isinstance(event, ApiTextDeltaEvent):
+                            yield AssistantTextDelta(text=event.text), None
+                            continue
+                        if isinstance(event, ApiRetryEvent):
+                            yield StatusEvent(
+                                message=(
+                                    f"Request failed; retrying in {event.delay_seconds:.1f}s "
+                                    f"(attempt {event.attempt + 1} of {event.max_attempts}): {event.message}"
+                                )
+                            ), None
+                            continue
 
-                if isinstance(event, ApiMessageCompleteEvent):
-                    final_message = event.message
-                    usage = event.usage
-        except Exception as exc:
-            error_msg = str(exc)
-            if _is_completion_token_limit_error(exc):
-                supported_limit = _extract_completion_token_limit(exc)
-                if supported_limit is not None and effective_max_tokens > supported_limit:
-                    previous_max_tokens = effective_max_tokens
-                    effective_max_tokens = supported_limit
-                    yield StatusEvent(
-                        message=(
-                            f"Model rejected max_tokens={previous_max_tokens}; "
-                            f"retrying with provider limit {effective_max_tokens}."
-                        )
-                    ), None
-                    turn_count = max(0, turn_count - 1)
-                    continue
-            if not reactive_compact_attempted and _is_prompt_too_long_error(exc):
-                reactive_compact_attempted = True
-                yield StatusEvent(message=REACTIVE_COMPACT_STATUS_MESSAGE), None
-                async for event, usage in _stream_compaction(trigger="reactive", force=True):
-                    yield event, usage
-                compacted_messages, was_compacted = last_compaction_result
-                if compacted_messages is not messages:
-                    messages[:] = compacted_messages
-                if was_compacted:
-                    continue
-            if "connect" in error_msg.lower() or "timeout" in error_msg.lower() or "network" in error_msg.lower():
-                yield ErrorEvent(message=f"Network error: {error_msg}. Check your internet connection and try again."), None
-            else:
-                yield ErrorEvent(message=f"API error: {error_msg}"), None
-            return
+                        if isinstance(event, ApiMessageCompleteEvent):
+                            final_message = event.message
+                            usage = event.usage
+                            stop_reason = event.stop_reason
+                except Exception as exc:
+                    model_span.record_error(exc)
+                    error_msg = str(exc)
+                    if _is_completion_token_limit_error(exc):
+                        supported_limit = _extract_completion_token_limit(exc)
+                        if supported_limit is not None and effective_max_tokens > supported_limit:
+                            previous_max_tokens = effective_max_tokens
+                            effective_max_tokens = supported_limit
+                            yield StatusEvent(
+                                message=(
+                                    f"Model rejected max_tokens={previous_max_tokens}; "
+                                    f"retrying with provider limit {effective_max_tokens}."
+                                )
+                            ), None
+                            turn_count = max(0, turn_count - 1)
+                            continue
+                    if not reactive_compact_attempted and _is_prompt_too_long_error(exc):
+                        reactive_compact_attempted = True
+                        yield StatusEvent(message=REACTIVE_COMPACT_STATUS_MESSAGE), None
+                        async for event, usage in _stream_compaction(trigger="reactive", force=True):
+                            yield event, usage
+                        compacted_messages, was_compacted = last_compaction_result
+                        if compacted_messages is not messages:
+                            messages[:] = compacted_messages
+                        if was_compacted:
+                            continue
+                    if "connect" in error_msg.lower() or "timeout" in error_msg.lower() or "network" in error_msg.lower():
+                        yield ErrorEvent(message=f"Network error: {error_msg}. Check your internet connection and try again."), None
+                    else:
+                        yield ErrorEvent(message=f"API error: {error_msg}"), None
+                    return
+                else:
+                    model_span.record_usage(usage, stop_reason)
+                    if final_message is not None:
+                        model_span.record_completion(final_message.text)
 
-        if final_message is None:
-            raise RuntimeError("Model stream finished without a final message")
+            if final_message is None:
+                raise RuntimeError("Model stream finished without a final message")
 
-        coordinator_context_message: ConversationMessage | None = None
-        if context.system_prompt.startswith("You are a **coordinator**."):
-            if messages and messages[-1].role == "user" and messages[-1].text.startswith("# Coordinator User Context"):
-                coordinator_context_message = messages.pop()
+            coordinator_context_message: ConversationMessage | None = None
+            if context.system_prompt.startswith("You are a **coordinator**."):
+                if messages and messages[-1].role == "user" and messages[-1].text.startswith("# Coordinator User Context"):
+                    coordinator_context_message = messages.pop()
 
-        if final_message.role == "assistant" and final_message.is_effectively_empty():
-            log.warning("dropping empty assistant message from provider response")
-            yield ErrorEvent(
-                message=(
-                    "Model returned an empty assistant message. "
-                    "The turn was ignored to keep the session healthy."
-                )
-            ), usage
-            return
+            if final_message.role == "assistant" and final_message.is_effectively_empty():
+                log.warning("dropping empty assistant message from provider response")
+                yield ErrorEvent(
+                    message=(
+                        "Model returned an empty assistant message. "
+                        "The turn was ignored to keep the session healthy."
+                    )
+                ), usage
+                return
 
-        messages.append(final_message)
-        yield AssistantTurnComplete(message=final_message, usage=usage), usage
+            messages.append(final_message)
+            yield AssistantTurnComplete(message=final_message, usage=usage), usage
 
-        if coordinator_context_message is not None:
-            messages.append(coordinator_context_message)
+            if coordinator_context_message is not None:
+                messages.append(coordinator_context_message)
 
-        if not final_message.tool_uses:
-            if context.hook_executor is not None:
-                await context.hook_executor.execute(
-                    HookEvent.STOP,
-                    {
-                        "event": HookEvent.STOP.value,
-                        "stop_reason": "tool_uses_empty",
-                    },
-                )
-            return
+            if not final_message.tool_uses:
+                if context.hook_executor is not None:
+                    await context.hook_executor.execute(
+                        HookEvent.STOP,
+                        {
+                            "event": HookEvent.STOP.value,
+                            "stop_reason": "tool_uses_empty",
+                        },
+                    )
+                return
 
-        tool_calls = final_message.tool_uses
+            tool_calls = final_message.tool_uses
 
-        if len(tool_calls) == 1:
-            # Single tool: sequential (stream events immediately)
-            tc = tool_calls[0]
-            yield ToolExecutionStarted(tool_name=tc.name, tool_input=tc.input), None
-            try:
-                result = await _execute_tool_call(context, tc.name, tc.id, tc.input)
-            except Exception as exc:
-                log.exception("tool execution raised: name=%s id=%s", tc.name, tc.id)
-                result = ToolResultBlock(
-                    tool_use_id=tc.id,
-                    content=f"Tool {tc.name} failed: {type(exc).__name__}: {exc}",
-                    is_error=True,
-                )
-            yield ToolExecutionCompleted(
-                tool_name=tc.name,
-                output=result.content,
-                is_error=result.is_error,
-                metadata=result.result_metadata,
-            ), None
-            tool_results = [result]
-        else:
-            # Multiple tools: execute concurrently, emit events after
-            for tc in tool_calls:
+            if len(tool_calls) == 1:
+                # Single tool: sequential (stream events immediately)
+                tc = tool_calls[0]
                 yield ToolExecutionStarted(tool_name=tc.name, tool_input=tc.input), None
-
-            async def _run(tc):
-                return await _execute_tool_call(context, tc.name, tc.id, tc.input)
-
-            # Use return_exceptions=True so a single failing tool does not abandon
-            # its siblings as cancelled coroutines and leave the conversation with
-            # un-replied tool_use blocks (Anthropic's API rejects the next request
-            # on the session if any tool_use is missing a matching tool_result).
-            raw_results = await asyncio.gather(
-                *[_run(tc) for tc in tool_calls], return_exceptions=True
-            )
-            tool_results = []
-            for tc, result in zip(tool_calls, raw_results):
-                if isinstance(result, BaseException):
-                    log.exception(
-                        "tool execution raised: name=%s id=%s",
-                        tc.name,
-                        tc.id,
-                        exc_info=result,
-                    )
-                    result = ToolResultBlock(
-                        tool_use_id=tc.id,
-                        content=f"Tool {tc.name} failed: {type(result).__name__}: {result}",
-                        is_error=True,
-                    )
-                tool_results.append(result)
-
-            for tc, result in zip(tool_calls, tool_results):
+                with obs.tool_span(tool_name=tc.name, tool_call_id=tc.id, tool_input=tc.input) as tool_handle:
+                    try:
+                        result = await _execute_tool_call(context, tc.name, tc.id, tc.input)
+                    except Exception as exc:
+                        log.exception("tool execution raised: name=%s id=%s", tc.name, tc.id)
+                        result = ToolResultBlock(
+                            tool_use_id=tc.id,
+                            content=f"Tool {tc.name} failed: {type(exc).__name__}: {exc}",
+                            is_error=True,
+                        )
+                    tool_handle.record_tool_result(result.content, result.is_error)
                 yield ToolExecutionCompleted(
                     tool_name=tc.name,
                     output=result.content,
                     is_error=result.is_error,
                     metadata=result.result_metadata,
                 ), None
+                tool_results = [result]
+            else:
+                # Multiple tools: execute concurrently, emit events after
+                for tc in tool_calls:
+                    yield ToolExecutionStarted(tool_name=tc.name, tool_input=tc.input), None
 
-        messages.append(ConversationMessage(role="user", content=tool_results))
+                async def _run(tc):
+                    with obs.tool_span(tool_name=tc.name, tool_call_id=tc.id, tool_input=tc.input) as tool_handle:
+                        result = await _execute_tool_call(context, tc.name, tc.id, tc.input)
+                        tool_handle.record_tool_result(result.content, result.is_error)
+                        return result
+
+                # Use return_exceptions=True so a single failing tool does not abandon
+                # its siblings as cancelled coroutines and leave the conversation with
+                # un-replied tool_use blocks (Anthropic's API rejects the next request
+                # on the session if any tool_use is missing a matching tool_result).
+                raw_results = await asyncio.gather(
+                    *[_run(tc) for tc in tool_calls], return_exceptions=True
+                )
+                tool_results = []
+                for tc, result in zip(tool_calls, raw_results):
+                    if isinstance(result, BaseException):
+                        log.exception(
+                            "tool execution raised: name=%s id=%s",
+                            tc.name,
+                            tc.id,
+                            exc_info=result,
+                        )
+                        result = ToolResultBlock(
+                            tool_use_id=tc.id,
+                            content=f"Tool {tc.name} failed: {type(result).__name__}: {result}",
+                            is_error=True,
+                        )
+                    tool_results.append(result)
+
+                for tc, result in zip(tool_calls, tool_results):
+                    yield ToolExecutionCompleted(
+                        tool_name=tc.name,
+                        output=result.content,
+                        is_error=result.is_error,
+                        metadata=result.result_metadata,
+                    ), None
+
+            messages.append(ConversationMessage(role="user", content=tool_results))
 
     if context.max_turns is not None:
         raise MaxTurnsExceeded(context.max_turns)

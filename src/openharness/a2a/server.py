@@ -100,6 +100,11 @@ def run_a2a_server(
     """Run the server with uvicorn (blocking)."""
     import uvicorn
 
+    from openharness import observability as obs
+    from openharness.config.settings import load_settings
+
+    obs.init_tracing(load_settings().observability)
+
     app = build_asgi_app(
         a2a_settings=a2a_settings, cwd=cwd, model=model, permission_mode=permission_mode,
         build_engine=build_engine,

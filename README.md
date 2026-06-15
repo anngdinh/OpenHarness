@@ -500,6 +500,58 @@ flowchart LR
     X --> Q
 ```
 
+### Observability (OpenTelemetry)
+
+The agent loop is instrumented with OpenTelemetry. Tracing is **off by default**.
+Install the optional extra and enable it via either `settings.json` or the
+standard `OTEL_*` environment variables (env vars take precedence when set):
+
+```bash
+pip install 'openharness-ai[observability]'
+```
+
+**Via `settings.json`** (`~/.openharness/settings.json`):
+
+```jsonc
+{
+  "observability": {
+    "exporter": "console",                       // "none" (default) | "console" | "otlp"
+    "otlp_endpoint": "http://localhost:4318/v1/traces",  // full signal URL for "otlp"
+    "otlp_headers": {                            // custom headers, e.g. auth for a gateway
+      "Authorization": "Basic <base64>"
+    },
+    "service_name": "openharness",
+    "capture_content": false                     // attach prompt / tool I/O payloads
+  }
+}
+```
+
+**Via environment variables** (override `settings.json`):
+
+```bash
+# Print spans to the console:
+OTEL_TRACES_EXPORTER=console oh
+
+# Or send them to a local Jaeger / OTLP collector:
+OTEL_TRACES_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 oh
+```
+
+Each user input produces one trace: `user_input → turn → {chat, execute_tool}`,
+with token usage, finish reasons, tool names, errors, and timings.
+
+When `capture_content` is enabled (or `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`),
+the full payloads are attached too — untruncated:
+
+| Span | Attribute |
+|------|-----------|
+| `user_input` | `gen_ai.prompt` — the user's prompt |
+| `chat` | `gen_ai.prompt` — the model request (system + messages); `gen_ai.request.tools` — the tool/function definitions sent; `gen_ai.completion` — the assistant's reply |
+| `execute_tool` | `openharness.tool.input` / `openharness.tool.output` |
+
+⚠️ Content is captured **untruncated**, so large tool outputs or prompts can bloat
+traces and may hit Jaeger/OTLP attribute limits. Leave `capture_content` off
+(default) unless you need full payloads for debugging.
+
 ---
 
 ## ✨ Features

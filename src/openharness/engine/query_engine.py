@@ -16,6 +16,7 @@ from openharness.hooks import HookEvent, HookExecutor
 from openharness.permissions.checker import PermissionChecker
 from openharness.services.autodream.service import schedule_auto_dream
 from openharness.tools.base import ToolRegistry
+from openharness import observability as obs
 
 
 class QueryEngine:
@@ -151,6 +152,20 @@ class QueryEngine:
             current_session_id=str(self._tool_metadata.get("session_id") or ""),
             **kwargs,
         )
+
+    def _gen_ai_system(self) -> str:
+        """OTel ``gen_ai.system`` value, derived from the active provider.
+
+        Prefer the concrete provider (e.g. ``gemini``, ``moonshot``) so distinct
+        OpenAI-compatible backends are distinguishable; fall back to the wire
+        ``api_format`` and finally ``openai``.
+        """
+        settings = self._settings
+        if settings is not None:
+            provider = getattr(settings, "provider", "") or getattr(settings, "api_format", "")
+            if provider:
+                return str(provider)
+        return "openai"
 
     def _memory_session_id(self) -> str:
         return str(self._tool_metadata.get("session_id") or "default")
@@ -328,18 +343,30 @@ class QueryEngine:
             ask_user_prompt=self._ask_user_prompt,
             hook_executor=self._hook_executor,
             tool_metadata=self._tool_metadata,
+            gen_ai_system=self._gen_ai_system(),
         )
         query_messages = list(self._messages)
         coordinator_context = self._build_coordinator_context_message()
         if coordinator_context is not None:
             query_messages.append(coordinator_context)
         try:
-            async for event, usage in run_query(context, query_messages):
-                if isinstance(event, AssistantTurnComplete):
-                    self._messages = list(query_messages)
-                if usage is not None:
-                    self._cost_tracker.add(usage)
-                yield event
+            with obs.user_input_span(
+                session_id=str(self._tool_metadata.get("session_id") or ""),
+                conversation_id=str(
+                    self._tool_metadata.get("conversation_id")
+                    or self._tool_metadata.get("session_id")
+                    or ""
+                ),
+                model=self._model,
+                entrypoint=str(self._tool_metadata.get("entrypoint") or "cli"),
+                prompt=user_message.text,
+            ):
+                async for event, usage in run_query(context, query_messages):
+                    if isinstance(event, AssistantTurnComplete):
+                        self._messages = list(query_messages)
+                    if usage is not None:
+                        self._cost_tracker.add(usage)
+                    yield event
         finally:
             await self._update_session_memory()
             await self._extract_durable_memories()
@@ -365,10 +392,21 @@ class QueryEngine:
             ask_user_prompt=self._ask_user_prompt,
             hook_executor=self._hook_executor,
             tool_metadata=self._tool_metadata,
+            gen_ai_system=self._gen_ai_system(),
         )
-        async for event, usage in run_query(context, self._messages):
-            if usage is not None:
-                self._cost_tracker.add(usage)
-            yield event
+        with obs.user_input_span(
+            session_id=str(self._tool_metadata.get("session_id") or ""),
+            conversation_id=str(
+                self._tool_metadata.get("conversation_id")
+                or self._tool_metadata.get("session_id")
+                or ""
+            ),
+            model=self._model,
+            entrypoint=str(self._tool_metadata.get("entrypoint") or "cli"),
+        ):
+            async for event, usage in run_query(context, self._messages):
+                if usage is not None:
+                    self._cost_tracker.add(usage)
+                yield event
         await self._update_session_memory()
         await self._extract_durable_memories()
