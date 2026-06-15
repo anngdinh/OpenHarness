@@ -77,6 +77,50 @@ def test_capture_content_from_settings(monkeypatch):
         tracing.reset_tracing()
 
 
+def test_observability_settings_otlp_headers_default():
+    from openharness.config.settings import ObservabilitySettings
+
+    assert ObservabilitySettings().otlp_headers == {}
+
+
+def test_parse_headers_handles_base64_padding():
+    from openharness.observability import tracing
+
+    parsed = tracing._parse_headers("Authorization=Basic YWxhZGRpbjpvcGVu==,X-Scope-OrgID=tenant1")
+    assert parsed == {"Authorization": "Basic YWxhZGRpbjpvcGVu==", "X-Scope-OrgID": "tenant1"}
+
+
+def test_resolve_headers_from_settings(monkeypatch):
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_HEADERS", raising=False)
+    from openharness.config.settings import ObservabilitySettings
+    from openharness.observability import tracing
+
+    cfg = ObservabilitySettings(otlp_headers={"Authorization": "Basic SET"})
+    assert tracing._resolve_headers(cfg) == {"Authorization": "Basic SET"}
+
+
+def test_resolve_headers_env_overrides_settings(monkeypatch):
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Basic ENVVAL")
+    from openharness.config.settings import ObservabilitySettings
+    from openharness.observability import tracing
+
+    cfg = ObservabilitySettings(otlp_headers={"Authorization": "Basic SETTINGSVAL"})
+    assert tracing._resolve_headers(cfg) == {"Authorization": "Basic ENVVAL"}
+
+
+def test_build_otlp_exporter_carries_endpoint_and_headers():
+    pytest.importorskip("opentelemetry.exporter.otlp.proto.http.trace_exporter")
+    from openharness.observability import tracing
+
+    exp = tracing._build_otlp_exporter(
+        "https://jaeger-4318.example/v1/traces",
+        {"Authorization": "Basic Zm9vOmJhcg=="},
+    )
+    assert exp is not None
+    assert exp._endpoint == "https://jaeger-4318.example/v1/traces"
+    assert exp._session.headers.get("Authorization") == "Basic Zm9vOmJhcg=="
+
+
 def test_settings_json_roundtrip_enables_tracing(tmp_path, monkeypatch):
     # The exact CLI path: load_settings(<settings.json>).observability -> init_tracing.
     monkeypatch.delenv("OTEL_TRACES_EXPORTER", raising=False)

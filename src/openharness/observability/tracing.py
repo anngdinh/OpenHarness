@@ -27,6 +27,32 @@ def _is_truthy(value: str) -> bool:
     return value.strip().lower() in ("true", "1", "yes", "on")
 
 
+def _parse_headers(raw: str) -> dict[str, str]:
+    """Parse the OTEL_EXPORTER_OTLP_HEADERS format: ``k1=v1,k2=v2``.
+
+    Split each comma-separated pair on its FIRST ``=`` so base64 values (which
+    may contain ``=`` padding) survive intact. The base64 alphabet has no comma,
+    so splitting pairs on ``,`` is safe.
+    """
+    out: dict[str, str] = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        key, value = pair.split("=", 1)
+        out[key.strip()] = value.strip()
+    return out
+
+
+def _resolve_headers(config: Any) -> dict[str, str]:
+    """Resolve OTLP headers — env (``OTEL_EXPORTER_OTLP_HEADERS``) wins over settings."""
+    env_headers = _env("OTEL_EXPORTER_OTLP_HEADERS")
+    if env_headers is not None:
+        return _parse_headers(env_headers)
+    headers = getattr(config, "otlp_headers", None) if config is not None else None
+    return dict(headers) if headers else {}
+
+
 def init_tracing(config: Any = None) -> None:
     """Configure a global tracer provider (idempotent).
 
@@ -67,7 +93,7 @@ def init_tracing(config: Any = None) -> None:
         exporter: Any = ConsoleSpanExporter()
     elif exporter_name == "otlp":
         endpoint = _env("OTEL_EXPORTER_OTLP_ENDPOINT") or cfg("otlp_endpoint", None)
-        exporter = _build_otlp_exporter(endpoint)
+        exporter = _build_otlp_exporter(endpoint, _resolve_headers(config))
         if exporter is None:
             return
     else:
@@ -88,13 +114,18 @@ def init_tracing(config: Any = None) -> None:
     _tracer = provider.get_tracer("openharness")
 
 
-def _build_otlp_exporter(endpoint: str | None = None) -> Any:
+def _build_otlp_exporter(endpoint: str | None = None, headers: dict[str, str] | None = None) -> Any:
+    kwargs: dict[str, Any] = {}
+    if endpoint:
+        kwargs["endpoint"] = endpoint
+    if headers:
+        kwargs["headers"] = headers
     try:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
             OTLPSpanExporter as HttpExporter,
         )
 
-        return HttpExporter(endpoint=endpoint) if endpoint else HttpExporter()
+        return HttpExporter(**kwargs)
     except ImportError:
         pass
     try:
@@ -102,7 +133,7 @@ def _build_otlp_exporter(endpoint: str | None = None) -> Any:
             OTLPSpanExporter as GrpcExporter,
         )
 
-        return GrpcExporter(endpoint=endpoint) if endpoint else GrpcExporter()
+        return GrpcExporter(**kwargs)
     except ImportError:
         return None
 

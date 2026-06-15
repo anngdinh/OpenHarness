@@ -88,7 +88,8 @@ Configurable two ways, with **env vars taking precedence over `settings.json`**
 ```jsonc
 "observability": {
   "exporter": "none",            // "none" (default) | "console" | "otlp"
-  "otlp_endpoint": null,
+  "otlp_endpoint": null,         // full signal URL, e.g. https://host/v1/traces
+  "otlp_headers": {},            // custom headers (e.g. Authorization for a gateway)
   "service_name": "openharness",
   "capture_content": false
 }

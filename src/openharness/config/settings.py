@@ -134,6 +134,7 @@ class ObservabilitySettings(BaseModel):
     # Span exporter: "none" (default, disabled), "console", or "otlp".
     exporter: str = "none"
     otlp_endpoint: str | None = None
+    otlp_headers: dict[str, str] = Field(default_factory=dict)
     service_name: str = "openharness"
     capture_content: bool = False
 

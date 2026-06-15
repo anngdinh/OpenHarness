@@ -516,7 +516,10 @@ pip install 'openharness-ai[observability]'
 {
   "observability": {
     "exporter": "console",                       // "none" (default) | "console" | "otlp"
-    "otlp_endpoint": "http://localhost:4318",    // for the "otlp" exporter
+    "otlp_endpoint": "http://localhost:4318/v1/traces",  // full signal URL for "otlp"
+    "otlp_headers": {                            // custom headers, e.g. auth for a gateway
+      "Authorization": "Basic <base64>"
+    },
     "service_name": "openharness",
     "capture_content": false                     // attach prompt / tool I/O payloads
   }
