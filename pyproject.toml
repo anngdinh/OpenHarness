@@ -53,6 +53,10 @@ a2a = [
 agentbase = [
     "greennode-agentbase>=1.0,<2",
 ]
+lgharness = [
+    "langgraph>=0.2",
+    "langchain-openai>=0.2",
+]
 observability = [
     "opentelemetry-sdk>=1.20",
     "opentelemetry-exporter-otlp>=1.20",
@@ -64,9 +68,10 @@ oh = "openharness.cli:app"
 openh = "openharness.cli:app"
 ohmo = "ohmo.cli:app"
 domo = "domo.cli:app"
+lgharness = "lgharness.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/openharness", "ohmo", "domo"]
+packages = ["src/openharness", "ohmo", "domo", "src/lgharness"]
 
 [tool.hatch.build]
 exclude = [
